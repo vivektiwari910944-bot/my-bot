@@ -199,6 +199,16 @@ def resume_state(label, state, bot):
             state.nc_threads[cid] = t
             t.start()
 
+def get_target_user(message):
+    if message.reply_to_message and message.reply_to_message.from_user:
+        return message.reply_to_message.from_user.id
+    parts = message.text.strip().split(None, 1)
+    if len(parts) > 1:
+        first_arg = parts[1].split()[0]
+        if first_arg.isdigit():
+            return int(first_arg)
+    return None
+
 def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
 
     def admin_only(message):
@@ -216,31 +226,83 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             "🔥 <b><u>𝑽𝑰𝑽𝑬𝑲 𝑴𝑼𝑳𝑻𝑰-𝑩𝑶𝑻 𝑬𝑵𝑮𝑰𝑵𝑬</u></b> [" + label + "] 🔥\n"
             "⚡ <i>POWERED BY VIVEK TIWARI</i> ⚡\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "🚀 <b>[ 𝗦𝗣𝗔𝗠 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 ]</b>\n"
-            "  ✦ <code>/spam &lt;msg&gt;</code> — Start Fast Spam\n"
-            "  ✦ <code>/spamoff</code> — Stop Spamming\n"
-            "  ✦ <code>/spam delay &lt;ms&gt;</code> — Speed Adjust (ms)\n\n"
-            "⚡ <b>[ 𝗙𝗔𝗦𝗧 𝗚𝗥𝗢𝗨𝗣 𝗥𝗘𝗡𝗔𝗠𝗘𝗥 ]</b>\n"
-            "  ✦ <code>/nc &lt;name&gt;</code> — Fast Auto Name Changer\n"
-            "  ✦ <code>/ncoff</code> — Stop Name Changer\n"
-            "  ✦ <code>/nc delay &lt;ms&gt;</code> — Speed Adjust (ms)\n\n"
-            "👑 <b>[ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗜𝗘𝗦 &amp; 𝗠𝗘𝗗𝗜𝗔 ]</b>\n"
-            "  ✦ <code>/autoreply &lt;text&gt;</code> — Auto Slide Text Reply\n"
-            "  ✦ <code>/autophoto &lt;url&gt;</code> — Auto Photo Reply\n"
-            "  ✦ <code>/autosticker &lt;id&gt;</code> — Auto Sticker Reply\n"
-            "  ✦ <code>/stopreply</code> — Stop All Auto Replies\n\n"
-            "💀 <b>[ 𝗔𝗨𝗧𝗢 𝗗𝗘𝗟𝗘𝗧𝗘 &amp; 𝗥𝗘𝗔𝗖𝗧 ]</b>\n"
-            "  ✦ <code>/auto_delete &lt;id&gt;</code> — Delete target user msgs\n"
-            "  ✦ <code>/react &lt;emoji&gt;</code> — Auto Emoji Reaction\n"
-            "  ✦ <code>/stopreact</code> — Stop Reactions\n\n"
+            "🚀 <b>[ 𝗦𝗣𝗔𝗠 &amp; 𝗡𝗖 ]</b>\n"
+            "  ✦ <code>/spam &lt;msg&gt;</code> | <code>/spamoff</code>\n"
+            "  ✦ <code>/nc &lt;name&gt;</code> | <code>/ncoff</code>\n\n"
+            "👑 <b>[ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗜𝗘𝗦 ]</b>\n"
+            "  ✦ <code>Reply + /autoreply &lt;text&gt;</code>\n"
+            "  ✦ <code>Reply + /autophoto &lt;url&gt;</code>\n"
+            "  ✦ <code>Reply + /autosticker &lt;id&gt;</code>\n"
+            "  ✦ <code>Reply + /stopreply</code>\n\n"
+            "🔍 <b>[ 𝗜𝗡𝗙𝗢 &amp; 𝗠𝗢𝗗 ]</b>\n"
+            "  ✦ <code>Reply + /info</code> — Get User Info &amp; DP\n"
+            "  ✦ <code>Reply + /del</code> — Delete 100 Messages Upward\n"
+            "  ✦ <code>Reply + /auto_delete</code> — Auto Delete User Msgs\n"
+            "  ✦ <code>Reply + /react &lt;emoji&gt;</code> | <code>/stopreact</code>\n\n"
             "🔱 <b>[ 𝗔𝗗𝗠𝗜𝗡 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 ]</b>\n"
-            "  ✦ <code>/addsubadmin &lt;id/@user&gt;</code>\n"
-            "  ✦ <code>/removesubadmin &lt;id/@user&gt;</code>\n"
             "  ✦ <code>/status</code> — System Monitor\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "👑 <i>DESIGNED BY VIVEK</i> 👑",
             parse_mode="HTML"
         )
+
+    # ==========================================
+    # 🔍 USER INFO COMMAND (/info)
+    # ==========================================
+    @bot.message_handler(commands=["info"])
+    def user_info_cmd(message):
+        if not admin_only(message): return
+        
+        target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+        chat_id = message.chat.id
+        
+        info_text = (
+            f"👤 <b><u>USER INFORMATION</u></b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🆔 <b>User ID:</b> <code>{target.id}</code>\n"
+            f"📛 <b>First Name:</b> {target.first_name}\n"
+            f"🏷️ <b>Last Name:</b> {target.last_name or 'None'}\n"
+            f"🌐 <b>Username:</b> @{target.username if target.username else 'None'}\n"
+            f"🤖 <b>Is Bot:</b> {'Yes' if target.is_bot else 'No'}\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
+        )
+
+        try:
+            photos = bot.get_user_profile_photos(target.id, limit=1)
+            if photos.total_count > 0:
+                file_id = photos.photos[0][-1].file_id
+                bot.send_photo(chat_id, file_id, caption=info_text, parse_mode="HTML", reply_to_message_id=message.message_id)
+            else:
+                bot.reply_to(message, info_text + "\n🖼️ <i>No profile photo available.</i>", parse_mode="HTML")
+        except Exception:
+            bot.reply_to(message, info_text, parse_mode="HTML")
+
+    # ==========================================
+    # 🧹 CUSTOM UPWARD DELETE (/del 100 MSGS)
+    # ==========================================
+    @bot.message_handler(commands=["del"])
+    def delete_upward_msgs(message):
+        if not admin_only(message): return
+        if not message.reply_to_message:
+            bot.reply_to(message, "❌ **Kisi message par reply karke `/del` likho!**")
+            return
+
+        chat_id = message.chat.id
+        start_msg_id = message.reply_to_message.message_id
+        
+        deleted_count = 0
+        # Target message id se lekar uske upar ke 100 messages tak delete karega
+        for msg_id in range(start_msg_id, start_msg_id - 100, -1):
+            try:
+                bot.delete_message(chat_id, msg_id)
+                deleted_count += 1
+            except Exception:
+                pass
+        
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except Exception:
+            pass
 
     @bot.message_handler(commands=["spam"])
     def handle_spam_cmd(message):
@@ -325,74 +387,142 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
     @bot.message_handler(commands=["autoreply"])
     def set_autoreply(message):
         if not admin_only(message): return
-        parts = message.text.split(" ", 1)
-        if len(parts) < 2: return
-        state.auto_reply[message.chat.id] = parts[1].strip()
+        target_id = get_target_user(message)
+        if not target_id:
+            bot.reply_to(message, "❌ **Kisi user ke message par reply karo ya User ID likho!**")
+            return
+
+        parts = message.text.split(None, 1)
+        if message.reply_to_message:
+            text = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            args = parts[1].split(None, 1) if len(parts) > 1 else []
+            text = args[1].strip() if len(args) > 1 else ""
+
+        if not text:
+            bot.reply_to(message, "❌ **Auto-reply text type karo!**")
+            return
+
+        state.auto_reply[target_id] = text
         save()
-        bot.reply_to(message, f"💬 Auto Slide Reply Set: {parts[1].strip()}")
+        bot.reply_to(message, f"💬 **Auto Text Reply set for target:** `{target_id}`", parse_mode="Markdown")
 
     @bot.message_handler(commands=["autophoto"])
     def set_autophoto(message):
         if not admin_only(message): return
-        parts = message.text.split(" ", 1)
-        if len(parts) < 2: return
-        state.auto_photo[message.chat.id] = parts[1].strip()
+        target_id = get_target_user(message)
+        if not target_id:
+            bot.reply_to(message, "❌ **Kisi user ke message par reply karo ya User ID likho!**")
+            return
+
+        parts = message.text.split(None, 1)
+        if message.reply_to_message:
+            url = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            args = parts[1].split(None, 1) if len(parts) > 1 else []
+            url = args[1].strip() if len(args) > 1 else ""
+
+        if not url:
+            bot.reply_to(message, "❌ **Photo URL paste karo!**")
+            return
+
+        state.auto_photo[target_id] = url
         save()
-        bot.reply_to(message, "🖼️ Auto Photo Reply Set!")
+        bot.reply_to(message, f"🖼️ **Auto Photo Reply set for target:** `{target_id}`", parse_mode="Markdown")
 
     @bot.message_handler(commands=["autosticker"])
     def set_autosticker(message):
         if not admin_only(message): return
-        parts = message.text.split(" ", 1)
-        if len(parts) < 2: return
-        state.auto_sticker[message.chat.id] = parts[1].strip()
+        target_id = get_target_user(message)
+        if not target_id:
+            bot.reply_to(message, "❌ **Kisi user ke message par reply karo ya User ID likho!**")
+            return
+
+        parts = message.text.split(None, 1)
+        if message.reply_to_message:
+            stk_id = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            args = parts[1].split(None, 1) if len(parts) > 1 else []
+            stk_id = args[1].strip() if len(args) > 1 else ""
+
+        if not stk_id:
+            bot.reply_to(message, "❌ **Sticker File ID paste karo!**")
+            return
+
+        state.auto_sticker[target_id] = stk_id
         save()
-        bot.reply_to(message, "🎯 Auto Sticker Reply Set!")
+        bot.reply_to(message, f"🎯 **Auto Sticker Reply set for target:** `{target_id}`", parse_mode="Markdown")
 
     @bot.message_handler(commands=["stopreply"])
     def stop_replies(message):
         if not admin_only(message): return
-        cid = message.chat.id
-        state.auto_reply.pop(cid, None)
-        state.auto_photo.pop(cid, None)
-        state.auto_sticker.pop(cid, None)
-        save()
-        bot.reply_to(message, "🔥 All Auto Replies Stopped!")
+        target_id = get_target_user(message)
+        if target_id:
+            state.auto_reply.pop(target_id, None)
+            state.auto_photo.pop(target_id, None)
+            state.auto_sticker.pop(target_id, None)
+            save()
+            bot.reply_to(message, f"🔥 **Target user (`{target_id}`) ke saare auto replies stop kar diye gaye hain!**", parse_mode="Markdown")
+        else:
+            cid = message.chat.id
+            state.auto_reply.pop(cid, None)
+            state.auto_photo.pop(cid, None)
+            state.auto_sticker.pop(cid, None)
+            save()
+            bot.reply_to(message, "🔥 All Auto Replies Stopped for this Chat!")
 
     @bot.message_handler(commands=["auto_delete", "autodelete"])
     def handle_auto_delete(message):
         if not admin_only(message): return
         chat_id = message.chat.id
+        target_id = get_target_user(message)
+
         parts = message.text.strip().split(None, 1)
-        arg = parts[1].strip() if len(parts) > 1 else ""
-        if arg.lower() in ["off", ""]:
+        arg = parts[1].strip().lower() if len(parts) > 1 else ""
+
+        if arg == "off":
             state.auto_delete.pop(chat_id, None)
             save()
-            bot.reply_to(message, "💀 Auto delete disabled!")
+            bot.reply_to(message, "💀 Auto delete disabled for this chat!")
             return
-        try:
-            target_id = int(arg)
-            state.auto_delete.setdefault(chat_id, set()).add(target_id)
-            save()
-            bot.reply_to(message, f"🎯 Auto delete ON for `{target_id}`", parse_mode="Markdown")
-        except ValueError:
-            pass
+
+        if not target_id:
+            bot.reply_to(message, "❌ **User ke message par reply karo ya User ID likho!**")
+            return
+
+        state.auto_delete.setdefault(chat_id, set()).add(target_id)
+        save()
+        bot.reply_to(message, f"🎯 Auto delete ON for target: `{target_id}`", parse_mode="Markdown")
 
     @bot.message_handler(commands=["react"])
     def handle_react(message):
         if not admin_only(message): return
+        target_id = get_target_user(message)
         parts = message.text.strip().split(None, 1)
-        if len(parts) < 2: return
-        state.auto_react[message.chat.id] = parts[1].strip()
+
+        if message.reply_to_message:
+            emoji = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            args = parts[1].split(None, 1) if len(parts) > 1 else []
+            emoji = args[1].strip() if len(args) > 1 else ""
+
+        if not emoji:
+            bot.reply_to(message, "❌ **Emoji type karo!** Example: `/react 😂`")
+            return
+
+        key = target_id if target_id else message.chat.id
+        state.auto_react[key] = emoji
         save()
-        bot.reply_to(message, f"⚡ Auto react set to: {parts[1].strip()}")
+        bot.reply_to(message, f"⚡ Auto react set to `{emoji}` for ID `{key}`", parse_mode="Markdown")
 
     @bot.message_handler(commands=["stopreact"])
     def stop_react(message):
         if not admin_only(message): return
-        state.auto_react.pop(message.chat.id, None)
+        target_id = get_target_user(message)
+        key = target_id if target_id else message.chat.id
+        state.auto_react.pop(key, None)
         save()
-        bot.reply_to(message, "🔥 Auto react disabled!")
+        bot.reply_to(message, f"🔥 Auto react disabled for ID `{key}`", parse_mode="Markdown")
 
     @bot.message_handler(commands=["status"])
     def show_status(message):
@@ -402,12 +532,13 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         bot.reply_to(message,
             f"👑 <b>[{label}] System Status</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"Spam       : {yn(state.spam_flags.get(chat_id))}\n"
-            f"Fast NC    : {yn(state.nc_flags.get(chat_id))}\n"
-            f"Auto Reply : {yn(state.auto_reply.get(chat_id))}\n"
-            f"Auto Photo : {yn(state.auto_photo.get(chat_id))}\n"
-            f"Auto React : {yn(state.auto_react.get(chat_id))}\n"
-            f"Subadmins  : {len(state.subadmins)}",
+            f"Spam          : {yn(state.spam_flags.get(chat_id))}\n"
+            f"Fast NC       : {yn(state.nc_flags.get(chat_id))}\n"
+            f"Target Replies: {len(state.auto_reply)}\n"
+            f"Target Photos : {len(state.auto_photo)}\n"
+            f"Target Sticker: {len(state.auto_sticker)}\n"
+            f"Auto Delete   : {len(state.auto_delete.get(chat_id, []))} targets\n"
+            f"Subadmins     : {len(state.subadmins)}",
             parse_mode="HTML"
         )
 
@@ -417,8 +548,11 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         chat_id = message.chat.id
         user_id = message.from_user.id if message.from_user else None
 
-        # Auto Delete
-        if user_id and chat_id in state.auto_delete and user_id in state.auto_delete[chat_id]:
+        if not user_id:
+            return
+
+        # 1. Auto Delete Check
+        if chat_id in state.auto_delete and user_id in state.auto_delete[chat_id]:
             try: bot.delete_message(chat_id, message.message_id)
             except Exception: pass
             return
@@ -427,24 +561,28 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         if message.text and message.text.startswith("/"):
             return
 
-        # Auto React
-        if chat_id in state.auto_react:
-            try: bot.set_message_reaction(chat_id, message.message_id, [telebot.types.ReactionTypeEmoji(state.auto_react[chat_id])])
+        # 2. Target User / Chat Auto React
+        react_key = user_id if user_id in state.auto_react else (chat_id if chat_id in state.auto_react else None)
+        if react_key:
+            try: bot.set_message_reaction(chat_id, message.message_id, [telebot.types.ReactionTypeEmoji(state.auto_react[react_key])])
             except Exception: pass
 
-        # Auto Text Reply
-        if chat_id in state.auto_reply:
-            try: bot.reply_to(message, state.auto_reply[chat_id])
+        # 3. Target User / Chat Auto Text Reply
+        reply_key = user_id if user_id in state.auto_reply else (chat_id if chat_id in state.auto_reply else None)
+        if reply_key:
+            try: bot.reply_to(message, state.auto_reply[reply_key])
             except Exception: pass
 
-        # Auto Photo Reply
-        if chat_id in state.auto_photo:
-            try: bot.send_photo(chat_id, state.auto_photo[chat_id], reply_to_message_id=message.message_id)
+        # 4. Target User / Chat Auto Photo Reply
+        photo_key = user_id if user_id in state.auto_photo else (chat_id if chat_id in state.auto_photo else None)
+        if photo_key:
+            try: bot.send_photo(chat_id, state.auto_photo[photo_key], reply_to_message_id=message.message_id)
             except Exception: pass
 
-        # Auto Sticker Reply
-        if chat_id in state.auto_sticker:
-            try: bot.send_sticker(chat_id, state.auto_sticker[chat_id], reply_to_message_id=message.message_id)
+        # 5. Target User / Chat Auto Sticker Reply
+        sticker_key = user_id if user_id in state.auto_sticker else (chat_id if chat_id in state.auto_sticker else None)
+        if sticker_key:
+            try: bot.send_sticker(chat_id, state.auto_sticker[sticker_key], reply_to_message_id=message.message_id)
             except Exception: pass
 
 def start_bot(token: str, label: str):
