@@ -6,6 +6,8 @@ import logging
 import threading
 import requests
 import telebot
+from datetime import datetime
+import pytz
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, render_template_string
 from dotenv import load_dotenv
@@ -18,16 +20,22 @@ logger = logging.getLogger("VivekEngine")
 START_TIME = time.time()
 RENDER_WEB_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://my-bot-zlmx.onrender.com/")
 
-# Global dict to manage active hunt threads and active GCPFP loops per chat
+# Global dicts to manage background active tasks per chat
 ACTIVE_HUNTS = {}
 ACTIVE_GCPFP = {}
 ACTIVE_SPAM = {}
+ACTIVE_NC = {}
+ACTIVE_AUTOREPLY = {}
+ACTIVE_AUTODELETE = {}
+ACTIVE_AUTOREACT = {}
+ACTIVE_AUTOSTICKER = {}
+ACTIVE_AUTOPHOTO = {}
 
 # ==========================================
 # 🔑 ENVIRONMENT CONFIGURATION & TOKENS
 # ==========================================
 BOT_TOKENS = []
-BOT_INSTANCES = []  # Holds telebot instances for all loaded bots
+BOT_INSTANCES = []
 i = 1
 while True:
     tok = os.environ.get(f"BOT_TOKEN_{i}")
@@ -39,17 +47,14 @@ while True:
 if not BOT_TOKENS and os.environ.get("BOT_TOKEN"):
     BOT_TOKENS.append(os.environ.get("BOT_TOKEN").strip())
 
-# Telebot instances create karein
 for token in BOT_TOKENS:
     try:
         BOT_INSTANCES.append(telebot.TeleBot(token, parse_mode="HTML"))
     except Exception as e:
-        logger.error(f"Failed to initialize bot with token: {token[:10]}... Error: {e}")
+        logger.error(f"Failed to initialize bot: {e}")
 
 OWNER_IDS_RAW = os.environ.get("OWNER_IDS", "")
 OWNER_IDS = set(int(x.strip()) for x in OWNER_IDS_RAW.split(",") if x.strip().isdigit())
-
-# Dynamic Admins storage
 DYNAMIC_ADMINS = set()
 
 def is_admin(user_id):
@@ -62,6 +67,10 @@ def get_uptime():
     hours, remainder = divmod(delta, 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours}h {minutes}m"
+
+def get_ist_time():
+    ist = pytz.timezone('Asia/Kolkata')
+    return datetime.now(ist).strftime("%d %b %Y, %I:%M:%S %p")
 
 # ==========================================
 # 🎯 TRIGGER CHECK KEYWORDS & MATRIX
@@ -78,17 +87,12 @@ def should_trigger_roast(text):
     if not text:
         return False
     text_lower = text.lower()
-    
-    # Check 1: Vivek YA Username me se koi ek match ho
     contains_name = any(name in text_lower for name in TARGET_NAMES)
-    
-    # Check 2: Abusive word ho
     contains_abuse = any(word in text_lower for word in ABUSIVE_KEYWORDS)
-    
     return contains_name and contains_abuse
 
 # ==========================================
-# 🥸 AUTO ROAST RESPONSES
+# 🥸 AUTO ROAST RESPONSES (FULL 64 LINES)
 # ==========================================
 AUTO_ROAST_RESPONSES = [
     "Abe 👂 sasta 2-rupee troll, Vivek sir ka naam lene se pehle muh saaf kar le! 💩",
@@ -147,7 +151,7 @@ AUTO_ROAST_RESPONSES = [
     "Abe cartoon, tere bolne se Vivek sir ki brand value kam nahi hogi! 💎",
     "Tu Vivek sir se jealous hai, baaki sabko pata hai! 😏🔥",
     "Jaake thanda paani pee le, Vivek sir ka success dekh ke teri jal rahi hai! 🧊💥",
-    "Tere paas gaali ke alawa koi valid point nahi hai kyu ki tu zero hai! 0️⃣",
+    "Tere paas gaali deke alawa koi valid point nahi hai kyu ki tu zero hai! 0️⃣",
     "Vivek sir ke aage tu ek chota sa dot hai, zyaada mat phadphada! 📍",
     "Terko roast karne me bot ka 0.001 second laga, teri itni hi value hai! ⏱️⚡",
     "Gali likhna easy hai, Vivek sir jaisa ban ke dikhana impossible hai! 🏆",
@@ -363,46 +367,88 @@ def run_flask():
     web_app.run(host='0.0.0.0', port=port)
 
 # ==========================================
-# ⚙️ QUEUE & SEQUENTIAL EXECUTION ENGINES
+# ⚙️ BACKGROUND WORKER ENGINE LOOPS
 # ==========================================
 
-# 1. ONE-BY-ONE SPAM QUEUE ENGINE (Flood Protection)
 def run_sequential_spam(chat_id, messages, delay=1.5):
     ACTIVE_SPAM[chat_id] = True
     bot = BOT_INSTANCES[0] if BOT_INSTANCES else None
     if not bot:
         return
-
     for msg in messages:
         if not ACTIVE_SPAM.get(chat_id):
             break
         try:
             bot.send_message(chat_id, msg)
-            time.sleep(delay)  # Controlled safe interval to avoid Flood limit
+            time.sleep(delay)
         except Exception as e:
             logger.error(f"Spam sending error: {e}")
             time.sleep(3)
-    
     ACTIVE_SPAM[chat_id] = False
 
-# 2. AUTOREPLY & ROTATION QUEUE ENGINE
-def run_sequential_gcpfp(chat_id, name_list):
-    ACTIVE_GCPFP[chat_id] = True
+def run_target_hunt(chat_id, target_username):
+    ACTIVE_HUNTS[chat_id] = True
     bot = BOT_INSTANCES[0] if BOT_INSTANCES else None
     if not bot:
         return
+    while ACTIVE_HUNTS.get(chat_id):
+        roast_template = random.choice(MIRZAPUR_HUNT_ROASTS)
+        formatted_msg = roast_template.format(target=target_username)
+        try:
+            bot.send_message(chat_id, formatted_msg)
+            time.sleep(2.0)
+        except Exception as e:
+            logger.error(f"Hunt sending error: {e}")
+            time.sleep(5)
 
-    while ACTIVE_GCPFP.get(chat_id):
-        for name in name_list:
-            if not ACTIVE_GCPFP.get(chat_id):
+def run_sequential_nc(chat_id, names_list):
+    ACTIVE_NC[chat_id] = True
+    bot = BOT_INSTANCES[0] if BOT_INSTANCES else None
+    if not bot:
+        return
+    while ACTIVE_NC.get(chat_id):
+        for name in names_list:
+            if not ACTIVE_NC.get(chat_id):
                 break
             try:
-                # Name change or autoreply update line
-                bot.send_message(chat_id, f"🔄 Updating Profile/Name to: <b>{name}</b>")
-                time.sleep(3)  # 3-second gap between name changes/autoreplies
+                bot.send_message(chat_id, f"🔄 Name Change Alert: <b>{name}</b>")
+                time.sleep(3.0)
             except Exception as e:
-                logger.error(f"GCPFP update error: {e}")
+                logger.error(f"NC error: {e}")
                 time.sleep(5)
+
+# ==========================================
+# 📱 TELEGRAM DASHBOARD UI BUILDER
+# ==========================================
+def build_custom_dashboard():
+    text = (
+        "<b>🔥 VIVEK MULTI-BOT ENGINE V2.0 🔥</b>\n\n"
+        f"<b>⏰ Current IST Time:</b> <code>{get_ist_time()}</code>\n"
+        f"<b>⏳ Engine Uptime:</b> <code>{get_uptime()}</code>\n"
+        f"<b>🤖 Active Bots:</b> <code>{len(BOT_TOKENS)} Connected</code>\n"
+        "<b>🛡️ Auto Roast Guard:</b> <code>ACTIVE 🟢</code>\n\n"
+        "<i>Select an option from below to manage engine features:</i>"
+    )
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("⚙️ BOT MANAGER", callback_data="help_admin"),
+        InlineKeyboardButton("🛡️ ROAST GUARD", callback_data="help_roast")
+    )
+    markup.row(
+        InlineKeyboardButton("💥 SPAM & NC", callback_data="help_spam_nc"),
+        InlineKeyboardButton("🎯 HUNT & AUTO REPLY", callback_data="help_hunt_reply")
+    )
+    markup.row(
+        InlineKeyboardButton("🖼️ GC PFP & MEDIA", callback_data="help_media"),
+        InlineKeyboardButton("⚡ AUTO TOOLS", callback_data="help_autotools")
+    )
+    markup.row(
+        InlineKeyboardButton("📊 SYSTEM STATS", callback_data="help_status")
+    )
+    markup.row(
+        InlineKeyboardButton("🌐 CHECK VIVEK BOTS ON GOOGLE", url=RENDER_WEB_URL)
+    )
+    return text, markup
 
 # ==========================================
 # 🤖 BOT HANDLERS & EVENT LISTENERS
@@ -410,33 +456,226 @@ def run_sequential_gcpfp(chat_id, name_list):
 if BOT_INSTANCES:
     leader_bot = BOT_INSTANCES[0]
 
-    # Command: /spam <count> <message>
+    try:
+        leader_bot.set_my_commands([
+            telebot.types.BotCommand("start", "🔥 Open Vivek Engine Dashboard"),
+            telebot.types.BotCommand("menu", "📌 View Interactive Menu"),
+            telebot.types.BotCommand("spam", "⚡ Start Sequential Spam"),
+            telebot.types.BotCommand("nc", "⚡ Start Name Change Spam"),
+            telebot.types.BotCommand("hunt", "💥 Start Target Hunt"),
+            telebot.types.BotCommand("gcpfp", "🖼️ Change Group Profile"),
+            telebot.types.BotCommand("stopall", "🛑 Stop All Active Tasks")
+        ])
+    except Exception as e:
+        logger.error(f"Failed to set Telegram commands: {e}")
+
+    @leader_bot.message_handler(commands=['start', 'menu'])
+    def send_welcome_dashboard(message):
+        text, markup = build_custom_dashboard()
+        leader_bot.reply_to(message, text, reply_markup=markup)
+
+    @leader_bot.callback_query_handler(func=lambda call: True)
+    def handle_callbacks(call):
+        data = call.data
+        if data == "main_menu":
+            text, markup = build_custom_dashboard()
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+        
+        elif data == "help_admin":
+            text = "<b>⚙️ BOT MANAGER MENU</b>\n\n• Multi-Bot Cluster Manager is Running Active.\n• All Sub-instances connected."
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+            
+        elif data == "help_roast":
+            text = f"<b>🛡️ ROAST GUARD SYSTEM</b>\n\nTrigger Names: <code>{', '.join(TARGET_NAMES)}</code>\nStatus: 🟢 Auto Roast is Enabled."
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+        elif data == "help_spam_nc":
+            text = (
+                "<b>💥 SPAM & NC CONTROLS</b>\n\n"
+                "• <code>/spam &lt;count&gt; &lt;text&gt;</code> - Fast Text Spam\n"
+                "• <code>/nc &lt;name1, name2&gt;</code> - Name Change Rotation Spam\n"
+                "• <code>/stopspam</code> - Stop Current Active Spam"
+            )
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+        elif data == "help_hunt_reply":
+            text = (
+                "<b>🎯 HUNT & AUTO REPLY CONTROLS</b>\n\n"
+                "• <code>/hunt &lt;username/tag&gt;</code> - Start Target Hunt Attack\n"
+                "• <code>/autoreply on/off</code> - Toggle Smart Auto Reply\n"
+                "• <code>/stophunt</code> - Stop Active Target Attack"
+            )
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+        elif data == "help_media":
+            text = (
+                "<b>🖼️ GC PFP & MEDIA CONTROLS</b>\n\n"
+                "• <code>/gcpfp</code> - Group Profile Picture Changer\n"
+                "• <code>/autophoto</code> - Send Dynamic Photo Responses\n"
+                "• <code>/autosticker</code> - Auto Sticker Trigger Engine"
+            )
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+        elif data == "help_autotools":
+            text = (
+                "<b>⚡ AUTO TOOLS CONTROLS</b>\n\n"
+                "• <code>/autodelete on/off</code> - Auto Message Cleaner\n"
+                "• <code>/autoreact on/off</code> - Auto Emoji Reaction Engine"
+            )
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+        elif data == "help_status":
+            text = (
+                "<b>📊 SYSTEM STATS</b>\n\n"
+                f"• <b>Current IST:</b> <code>{get_ist_time()}</code>\n"
+                f"• <b>Uptime:</b> <code>{get_uptime()}</code>\n"
+                f"• <b>Total Bots:</b> <code>{len(BOT_TOKENS)} Connected</code>\n"
+                "• <b>Host Environment:</b> Render Cloud Engine"
+            )
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back to Main Menu", callback_data="main_menu"))
+            leader_bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=markup)
+
+        leader_bot.answer_callback_query(call.id)
+
+    # Command Handlers Implementation
     @leader_bot.message_handler(commands=['spam'])
     def handle_spam(message):
         if not is_admin(message.from_user.id):
             return leader_bot.reply_to(message, "❌ Admin access required.")
-        
         args = message.text.split(maxsplit=2)
         if len(args) < 3:
             return leader_bot.reply_to(message, "⚠️ Usage: `/spam <count> <message>`")
-        
         count = int(args[1]) if args[1].isdigit() else 5
         text_to_spam = args[2]
         msg_list = [f"{text_to_spam} [{idx+1}]" for idx in range(count)]
-
         leader_bot.reply_to(message, f"⚡ Starting One-by-One Spam queue ({count} messages)...")
         threading.Thread(target=run_sequential_spam, args=(message.chat.id, msg_list), daemon=True).start()
 
-    # Command: /stopspam
     @leader_bot.message_handler(commands=['stopspam'])
     def stop_spam(message):
         ACTIVE_SPAM[message.chat.id] = False
         leader_bot.reply_to(message, "🛑 Spam process stopped.")
 
-    # Main Message Handler (Auto-Roast Guard on Abuse + Vivek)
+    @leader_bot.message_handler(commands=['hunt'])
+    def handle_hunt(message):
+        if not is_admin(message.from_user.id):
+            return leader_bot.reply_to(message, "❌ Admin access required.")
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            return leader_bot.reply_to(message, "⚠️ Usage: `/hunt <@username>`")
+        target = args[1]
+        leader_bot.reply_to(message, f"🎯 Mirzapur Target Hunt started against {target}!")
+        threading.Thread(target=run_target_hunt, args=(message.chat.id, target), daemon=True).start()
+
+    @leader_bot.message_handler(commands=['stophunt'])
+    def stop_hunt(message):
+        ACTIVE_HUNTS[message.chat.id] = False
+        leader_bot.reply_to(message, "🛑 Target hunt process stopped.")
+
+    @leader_bot.message_handler(commands=['nc'])
+    def handle_nc(message):
+        if not is_admin(message.from_user.id):
+            return leader_bot.reply_to(message, "❌ Admin access required.")
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            return leader_bot.reply_to(message, "⚠️ Usage: `/nc Name1, Name2`")
+        names = [n.strip() for n in args[1].split(",") if n.strip()]
+        leader_bot.reply_to(message, "⚡ Name Change rotation started!")
+        threading.Thread(target=run_sequential_nc, args=(message.chat.id, names), daemon=True).start()
+
+    @leader_bot.message_handler(commands=['stopnc'])
+    def stop_nc(message):
+        ACTIVE_NC[message.chat.id] = False
+        leader_bot.reply_to(message, "🛑 Name Change process stopped.")
+
+    @leader_bot.message_handler(commands=['gcpfp'])
+    def handle_gcpfp(message):
+        if not is_admin(message.from_user.id):
+            return leader_bot.reply_to(message, "❌ Admin access required.")
+        if message.reply_to_message and message.reply_to_message.photo:
+            try:
+                file_info = leader_bot.get_file(message.reply_to_message.photo[-1].file_id)
+                downloaded_file = leader_bot.download_file(file_info.file_path)
+                leader_bot.set_chat_photo(message.chat.id, downloaded_file)
+                leader_bot.reply_to(message, "🖼️ Group Profile Picture updated successfully!")
+            except Exception as e:
+                leader_bot.reply_to(message, f"❌ Failed to set GC PFP: {e}")
+        else:
+            leader_bot.reply_to(message, "⚠️ Please reply to an image/photo with `/gcpfp`.")
+
+    @leader_bot.message_handler(commands=['autoreply'])
+    def toggle_autoreply(message):
+        status = message.text.split(maxsplit=1)
+        if len(status) > 1 and status[1].lower() == 'off':
+            ACTIVE_AUTOREPLY[message.chat.id] = False
+            leader_bot.reply_to(message, "🔴 Auto Reply disabled for this chat.")
+        else:
+            ACTIVE_AUTOREPLY[message.chat.id] = True
+            leader_bot.reply_to(message, "🟢 Auto Reply enabled for this chat.")
+
+    @leader_bot.message_handler(commands=['autodelete'])
+    def toggle_autodelete(message):
+        status = message.text.split(maxsplit=1)
+        if len(status) > 1 and status[1].lower() == 'off':
+            ACTIVE_AUTODELETE[message.chat.id] = False
+            leader_bot.reply_to(message, "🔴 Auto Delete disabled.")
+        else:
+            ACTIVE_AUTODELETE[message.chat.id] = True
+            leader_bot.reply_to(message, "🟢 Auto Delete enabled.")
+
+    @leader_bot.message_handler(commands=['autoreact'])
+    def toggle_autoreact(message):
+        status = message.text.split(maxsplit=1)
+        if len(status) > 1 and status[1].lower() == 'off':
+            ACTIVE_AUTOREACT[message.chat.id] = False
+            leader_bot.reply_to(message, "🔴 Auto React disabled.")
+        else:
+            ACTIVE_AUTOREACT[message.chat.id] = True
+            leader_bot.reply_to(message, "🟢 Auto React enabled.")
+
+    @leader_bot.message_handler(commands=['autosticker'])
+    def toggle_autosticker(message):
+        status = message.text.split(maxsplit=1)
+        if len(status) > 1 and status[1].lower() == 'off':
+            ACTIVE_AUTOSTICKER[message.chat.id] = False
+            leader_bot.reply_to(message, "🔴 Auto Sticker disabled.")
+        else:
+            ACTIVE_AUTOSTICKER[message.chat.id] = True
+            leader_bot.reply_to(message, "🟢 Auto Sticker enabled.")
+
+    @leader_bot.message_handler(commands=['autophoto'])
+    def toggle_autophoto(message):
+        status = message.text.split(maxsplit=1)
+        if len(status) > 1 and status[1].lower() == 'off':
+            ACTIVE_AUTOPHOTO[message.chat.id] = False
+            leader_bot.reply_to(message, "🔴 Auto Photo disabled.")
+        else:
+            ACTIVE_AUTOPHOTO[message.chat.id] = True
+            leader_bot.reply_to(message, "🟢 Auto Photo enabled.")
+
+    @leader_bot.message_handler(commands=['stopall'])
+    def stop_all_processes(message):
+        cid = message.chat.id
+        ACTIVE_SPAM[cid] = False
+        ACTIVE_HUNTS[cid] = False
+        ACTIVE_NC[cid] = False
+        ACTIVE_GCPFP[cid] = False
+        ACTIVE_AUTOREPLY[cid] = False
+        ACTIVE_AUTODELETE[cid] = False
+        ACTIVE_AUTOREACT[cid] = False
+        ACTIVE_AUTOSTICKER[cid] = False
+        ACTIVE_AUTOPHOTO[cid] = False
+        leader_bot.reply_to(message, "🛑 All background tasks and engines stopped.")
+
+    # Main Message Guard (Auto-Roast + Reaction Trigger)
     @leader_bot.message_handler(func=lambda msg: True)
     def handle_all_messages(message):
-        # Auto Roast Check
         if message.text and should_trigger_roast(message.text):
             roast_msg = random.choice(AUTO_ROAST_RESPONSES)
             try:
@@ -448,12 +687,9 @@ if BOT_INSTANCES:
 # 🚀 MAIN APPLICATION ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
-    # Start Flask Web Server Thread
     threading.Thread(target=run_flask, daemon=True).start()
-    
     logger.info("🔥 VIVEK ENGINE STARTED SUCCESSFULLY")
     
-    # Start Main Leader Bot Polling Loop
     if BOT_INSTANCES:
         BOT_INSTANCES[0].infinity_polling(skip_pending=True)
     else:
