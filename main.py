@@ -86,7 +86,6 @@ def should_trigger_roast(text):
     contains_abuse = any(word in text_lower for word in ABUSIVE_KEYWORDS)
     
     return contains_name and contains_abuse
-e
 
 # ==========================================
 # 🥸 AUTO ROAST RESPONSES
