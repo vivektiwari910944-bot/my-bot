@@ -641,10 +641,12 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "huntoff" and admin_only(m))
     def cmd_huntoff(message):
         cid = message.chat.id
-        state.hunt_flags[cid] = False
-        state.hunt_targets[cid] = None
+        for _, st, _ in _bot_instances_list:
+            st.hunt_flags[cid] = False
+            st.hunt_targets[cid] = None
         save_all_states()
-        send_and_react(message.chat.id, "🛑 HUNTING STOPPED!")
+        send_and_react(message.chat.id, "🛑 HUNTING STOPPED ACROSS ALL BOTS!")
+
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("gpdp ") and admin_only(m))
     def cmd_gpdp(message):
