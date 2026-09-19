@@ -652,15 +652,15 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         save_all_states()
         send_and_react(message.chat.id, f"⚔️ HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
 
-@bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) in ["huntoff", "vhuntoff"] and admin_only(m))
-def cmd_huntoff(message):
-    cid = message.chat.id
-    # Sabhi bot instances ke flags off kar do taaki kahin bhi loop na bache
-    for _, st, _ in _bot_instances_list:
-        st.hunt_flags[cid] = False
-        st.hunt_targets[cid] = None
-    save_all_states()
-    send_and_react(message.chat.id, "🛑 HUNTING STOPPED INSTANTLY!")
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) in ["huntoff", "vhuntoff"] and admin_only(m))
+    def cmd_huntoff(message):
+        cid = message.chat.id
+        for _, st, _ in _bot_instances_list:
+            st.hunt_flags[cid] = False
+            st.hunt_targets[cid] = None
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 HUNTING STOPPED INSTANTLY!")
+
 
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("gpdp ") and admin_only(m))
