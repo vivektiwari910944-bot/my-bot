@@ -1,7 +1,10 @@
-import os, sys, threading, time, random, json, logging
+import os, sys, threading, time, random, json, logging, io
 from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 import telebot
-from flask import Flask
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import requests
+from flask import Flask, render_template_string
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,13 +15,214 @@ logger = logging.getLogger("VivekEngine")
 STATE_FILE = "vivek_state.json"
 
 # ==========================================
-# 🌐 FLASK KEEP ALIVE SERVER (FOR 24/7 HOSTING)
+# 🌐 DYNAMIC CONFIGURATION VARIABLES
+# ==========================================
+DEFAULT_BG = "https://images.alphacoders.com/132/1328400.jpeg"
+bg_image_url = DEFAULT_BG
+
+render_web_url = "https://my-bot-zlmx.onrender.com/"
+
+def upload_to_web(bot, file_id):
+    try:
+        file_info = bot.get_file(file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        response = requests.post(
+            "https://catbox.moe/user/api.php",
+            data={"reqtype": "fileupload"},
+            files={"fileToUpload": downloaded_file},
+            timeout=15
+        )
+        if response.status_code == 200:
+            return response.text.strip()
+    except Exception as e:
+        logger.error(f"Upload to Web Error: {e}")
+    return None
+
+# ==========================================
+# 🌐 FLASK ANIME GLOW WEB MENU SERVER
 # ==========================================
 web_app = Flask(__name__)
 
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIVEK MULTI-BOT 🦁</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(rgba(10, 15, 30, 0.55), rgba(10, 15, 30, 0.65)), 
+                        url('{{ bg_url }}') no-repeat center center fixed;
+            background-size: cover;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 880px;
+            background: rgba(18, 22, 40, 0.75);
+            border: 2px solid #00f0ff;
+            box-shadow: 0 0 35px rgba(0, 240, 255, 0.5), inset 0 0 20px rgba(0, 240, 255, 0.2);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(14px);
+            text-align: center;
+        }
+        h1 {
+            font-size: 2.6rem;
+            color: #ff0055;
+            text-shadow: 0 0 15px #ff0055, 0 0 30px #ff0055;
+            margin-bottom: 8px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+        .subtitle {
+            font-size: 1.2rem;
+            color: #00ffff;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #00ffff;
+            font-weight: 600;
+        }
+        
+        .btn-render {
+            display: inline-block;
+            margin: 10px 0 25px 0;
+            padding: 14px 32px;
+            font-size: 1.15rem;
+            font-weight: bold;
+            color: #ffffff;
+            background: linear-gradient(45deg, #ff0055, #7928ca, #00dfd8);
+            background-size: 200% 200%;
+            animation: gradientGlow 3s ease infinite;
+            border: none;
+            border-radius: 30px;
+            text-decoration: none;
+            box-shadow: 0 0 20px rgba(0, 223, 216, 0.8), 0 0 30px rgba(255, 0, 85, 0.6);
+            transition: all 0.3s ease;
+        }
+        .btn-render:hover {
+            transform: scale(1.06);
+            box-shadow: 0 0 30px rgba(0, 223, 216, 1), 0 0 45px rgba(255, 0, 85, 0.9);
+        }
+        @keyframes gradientGlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .section-title {
+            font-size: 1.35rem;
+            color: #ffd700;
+            border-bottom: 2px solid #ffd700;
+            display: inline-block;
+            margin: 22px 0 15px 0;
+            padding-bottom: 4px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+            font-weight: bold;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(0, 240, 255, 0.45);
+            padding: 15px;
+            border-radius: 12px;
+            transition: 0.3s ease;
+            backdrop-filter: blur(8px);
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: #ff0055;
+            box-shadow: 0 0 20px rgba(255, 0, 85, 0.7);
+            background: rgba(255, 255, 255, 0.22);
+        }
+        .cmd {
+            font-weight: bold;
+            color: #00ffff;
+            font-size: 1.05rem;
+            text-shadow: 0 0 6px #00ffff;
+        }
+        .desc {
+            font-size: 0.9rem;
+            color: #f1f1f1;
+            margin-top: 5px;
+            font-weight: 500;
+        }
+        .footer {
+            margin-top: 25px;
+            font-size: 1.1rem;
+            color: #ff0055;
+            text-shadow: 0 0 12px #ff0055;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VIVEK MULTI-BOT EQUIPMENT</h1>
+        <div class="subtitle">𝘝𝘐𝘝𝘌𝘒 𝘋𝘖𝘔𝘈𝘐𝘕 𝘌𝘟𝘗𝘈𝘕𝘋𝘌𝘋</div>
+
+        <a href="{{ render_url }}" target="_blank" class="btn-render">🌐 OPEN VIVEK RENDER SERVER</a>
+
+        <div class="section-title">🚀 SPAM, NC & FLOW COMMANDS</div>
+        <div class="grid">
+            <div class="card"><div class="cmd">vmenu</div><div class="desc">Show Menu with Domain Button</div></div>
+            <div class="card"><div class="cmd">vflow &lt;delay&gt;</div><div class="desc">Set Universal Delay (Sec)</div></div>
+            <div class="card"><div class="cmd">vwebbg</div><div class="desc">Set Photo as Web Background</div></div>
+            <div class="card"><div class="cmd">vweburl &lt;link&gt;</div><div class="desc">Update Render Domain Link</div></div>
+            <div class="card"><div class="cmd">vspam &lt;msg&gt;</div><div class="desc">Start fast spam</div></div>
+            <div class="card"><div class="cmd">vspamoff</div><div class="desc">Stop active spam</div></div>
+            <div class="card"><div class="cmd">vnc &lt;name&gt;</div><div class="desc">Name changer loop</div></div>
+            <div class="card"><div class="cmd">vncoff</div><div class="desc">Stop name changer</div></div>
+            <div class="card"><div class="cmd">vhunt &lt;target&gt;</div><div class="desc">Hunt down target</div></div>
+            <div class="card"><div class="cmd">vhuntoff</div><div class="desc">Stop hunting</div></div>
+            <div class="card"><div class="cmd">vgpdp &lt;url&gt;</div><div class="desc">Group DP from URL</div></div>
+            <div class="card"><div class="cmd">vgpdpoff</div><div class="desc">Stop DP loop</div></div>
+        </div>
+
+        <div class="section-title">👑 AUTO REPLIES & REACTS</div>
+        <div class="grid">
+            <div class="card"><div class="cmd">vautoreply</div><div class="desc">Set auto text reply</div></div>
+            <div class="card"><div class="cmd">vautophoto</div><div class="desc">Set auto photo reply</div></div>
+            <div class="card"><div class="cmd">vautosticker</div><div class="desc">Set auto sticker reply</div></div>
+            <div class="card"><div class="cmd">vreact &lt;emoji&gt;</div><div class="desc">Auto react to target</div></div>
+            <div class="card"><div class="cmd">vstopreact</div><div class="desc">Stop auto react</div></div>
+            <div class="card"><div class="cmd">vstopreply</div><div class="desc">Stop all auto replies</div></div>
+        </div>
+
+        <div class="section-title">🔍 INFO & MODERATION</div>
+        <div class="grid">
+            <div class="card"><div class="cmd">vinfo</div><div class="desc">Get user info & DP</div></div>
+            <div class="card"><div class="cmd">vdel</div><div class="desc">Delete 100 messages</div></div>
+            <div class="card"><div class="cmd">vautodelete</div><div class="desc">Auto delete target</div></div>
+            <div class="card"><div class="cmd">vstatus</div><div class="desc">System status check</div></div>
+        </div>
+
+        <div class="footer">🟢 DEVELOPER : VIVEK TIWARI 🟢</div>
+    </div>
+</body>
+</html>
+"""
+
 @web_app.route('/')
 def home():
-    return "🔥 Vivek Multi-Bot Engine is Running 24/7! 🔥"
+    return render_template_string(HTML_TEMPLATE, bg_url=bg_image_url, render_url=render_web_url)
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
@@ -27,7 +231,7 @@ def run_flask():
 def keep_alive():
     t = Thread(target=run_flask, daemon=True)
     t.start()
-    logger.info("Flask Keep-Alive server active!")
+    logger.info("Flask Web Engine server active!")
 
 # ==========================================
 # ⚙️ INITIAL SETUP
@@ -40,13 +244,13 @@ def run_setup():
             break
         print("Owner ID required!")
     tokens = []
-    print("\nBot tokens ek ek karke daalo. Khatam karne ke liye blank Enter karo.")
+    print("\nEnter Bot tokens one by one. Press enter on blank line to finish.")
     i = 1
     while True:
         tok = input(f"  Bot Token {i} (blank = done): ").strip()
         if not tok:
             if not tokens:
-                print("  Kam se kam ek token chahiye!")
+                print("  At least one token is required!")
                 continue
             break
         tokens.append(tok)
@@ -78,9 +282,19 @@ COOL_EMOJIS = ["🔥","⚡","👑","💀","🚀","💥","⚔️","🔱","🎯","
 def cool_emoji():
     return random.choice(COOL_EMOJIS)
 
-def normalize(text: str) -> str:
+HUNT_LINES = [
+    "Bow down before the almighty master, you absolute non-entity! ⚔️",
+    "You really thought you could survive in this arena? Know your place, worm! 💀",
+    "Tremble before the absolute authority! You stand zero chance! 🔱",
+    "Keep talking, but remember you are just fuel for the empire! 🚀",
+    "A slave of destiny trying to fight the emperor? How pitiful! 👑"
+]
+
+def normalize_cmd(text: str) -> str:
     text = text.strip()
     if text.startswith("/"):
+        text = text[1:]
+    elif text.lower().startswith("v"):
         text = text[1:]
     parts = text.split(None, 1)
     if parts and "@" in parts[0]:
@@ -92,17 +306,19 @@ _all_states = {}
 def save_all_states():
     data = {}
     for label, state in _all_states.items():
-        spam = {str(cid): {"active": state.spam_flags.get(cid, False), "msg": state.spam_msgs.get(cid, ""), "delay": state.spam_delay.get(cid, 0.5)} for cid in state.spam_flags}
-        nc = {str(cid): {"active": state.nc_flags.get(cid, False), "name": state.nc_names.get(cid, ""), "delay": state.nc_delay.get(cid, 1.0)} for cid in state.nc_flags}
-        dc = {str(cid): {"active": state.dc_flags.get(cid, False), "desc": state.dc_descs.get(cid, ""), "delay": state.dc_delay.get(cid, 1.5)} for cid in state.dc_flags}
+        spam = {str(cid): {"active": state.spam_flags.get(cid, False), "msg": state.spam_msgs.get(cid, ""), "delay": state.spam_delay.get(cid, 0.1)} for cid in state.spam_flags}
+        nc = {str(cid): {"active": state.nc_flags.get(cid, False), "name": state.nc_names.get(cid, ""), "delay": state.nc_delay.get(cid, 0.5)} for cid in state.nc_flags}
+        hunt = {str(cid): {"active": state.hunt_flags.get(cid, False), "target": state.hunt_targets.get(cid, None), "delay": state.hunt_delay.get(cid, 0.5)} for cid in state.hunt_flags}
+        gpdp = {str(cid): {"active": state.gpdp_flags.get(cid, False), "url": state.gpdp_urls.get(cid, ""), "delay": state.gpdp_delay.get(cid, 2.0)} for cid in state.gpdp_flags}
+        
         data[label] = {
-            "spam": spam, "nc": nc, "dc": dc,
+            "spam": spam, "nc": nc, "hunt": hunt, "gpdp": gpdp,
             "subadmins": list(state.subadmins),
             "auto_delete": {str(cid): list(uids) for cid, uids in state.auto_delete.items()},
-            "auto_react": {str(k): v for k, v in state.auto_react.items()},
-            "auto_reply": {str(k): v for k, v in state.auto_reply.items()},
-            "auto_photo": {str(k): v for k, v in state.auto_photo.items()},
-            "auto_sticker": {str(k): v for k, v in state.auto_sticker.items()}
+            "auto_react": {f"{k[0]}_{k[1]}": v for k, v in state.auto_react.items()},
+            "auto_reply": {f"{k[0]}_{k[1]}": v for k, v in state.auto_reply.items()},
+            "auto_photo": {f"{k[0]}_{k[1]}": v for k, v in state.auto_photo.items()},
+            "auto_sticker": {f"{k[0]}_{k[1]}": v for k, v in state.auto_sticker.items()}
         }
     try:
         with open(STATE_FILE, "w") as f:
@@ -122,11 +338,16 @@ class BotState:
         self.nc_threads = {}
         self.nc_delay = {}
         self.nc_names = {}
-        
-        self.dc_flags = {}
-        self.dc_threads = {}
-        self.dc_delay = {}
-        self.dc_descs = {}
+
+        self.hunt_flags = {}
+        self.hunt_threads = {}
+        self.hunt_targets = {}
+        self.hunt_delay = {}
+
+        self.gpdp_flags = {}
+        self.gpdp_threads = {}
+        self.gpdp_urls = {}
+        self.gpdp_delay = {}
         
         self.auto_delete = {}
         self.auto_react = {}
@@ -143,7 +364,7 @@ def spam_worker(bot, state, chat_id, text):
             bot.send_message(chat_id, text)
         except Exception:
             pass
-        time.sleep(state.spam_delay.get(chat_id, 0.5))
+        time.sleep(state.spam_delay.get(chat_id, 0.1))
 
 def nc_worker(bot, state, chat_id, base_name):
     while state.nc_flags.get(chat_id, False):
@@ -151,58 +372,35 @@ def nc_worker(bot, state, chat_id, base_name):
             bot.set_chat_title(chat_id, f"{base_name} {cool_emoji()}")
         except Exception:
             pass
-        time.sleep(state.nc_delay.get(chat_id, 1.0))
+        time.sleep(state.nc_delay.get(chat_id, 0.5))
 
-def dc_worker(bot, state, chat_id, base_desc):
-    while state.dc_flags.get(chat_id, False):
+def hunt_worker(bot, state, chat_id, target_id):
+    line_idx = 0
+    while state.hunt_flags.get(chat_id, False) and state.hunt_targets.get(chat_id) == target_id:
         try:
-            bot.set_chat_description(chat_id, f"{base_desc} {cool_emoji()}")
+            line = HUNT_LINES[line_idx % len(HUNT_LINES)]
+            bot.send_message(chat_id, f"<a href='tg://user?id={target_id}'>Target</a> {line}", parse_mode="HTML")
+            line_idx += 1
         except Exception:
             pass
-        time.sleep(state.dc_delay.get(chat_id, 1.5))
+        time.sleep(state.hunt_delay.get(chat_id, 0.5))
 
-def resume_state(label, state, bot):
-    if not os.path.exists(STATE_FILE):
-        return
-    try:
-        with open(STATE_FILE) as f:
-            data = json.load(f)
-    except Exception:
-        return
-    if label not in data:
-        return
-    d = data[label]
-    state.subadmins = set(d.get("subadmins", []))
-    state.auto_delete = {int(cid): set(uids) for cid, uids in d.get("auto_delete", {}).items()}
-    state.auto_react = {int(k): v for k, v in d.get("auto_react", {}).items() if k.lstrip("-").isdigit()}
-    state.auto_reply = {int(k): v for k, v in d.get("auto_reply", {}).items() if k.lstrip("-").isdigit()}
-    state.auto_photo = {int(k): v for k, v in d.get("auto_photo", {}).items() if k.lstrip("-").isdigit()}
-    state.auto_sticker = {int(k): v for k, v in d.get("auto_sticker", {}).items() if k.lstrip("-").isdigit()}
-    
-    for cid_str, info in d.get("spam", {}).items():
-        if info.get("active") and info.get("msg"):
-            cid = int(cid_str)
-            state.spam_delay[cid] = info.get("delay", 0.5)
-            state.spam_flags[cid] = True
-            state.spam_msgs[cid] = info["msg"]
-            t = threading.Thread(target=spam_worker, args=(bot, state, cid, info["msg"]), daemon=True)
-            state.spam_threads[cid] = t
-            t.start()
-            
-    for cid_str, info in d.get("nc", {}).items():
-        if info.get("active") and info.get("name"):
-            cid = int(cid_str)
-            state.nc_delay[cid] = info.get("delay", 1.0)
-            state.nc_flags[cid] = True
-            state.nc_names[cid] = info["name"]
-            t = threading.Thread(target=nc_worker, args=(bot, state, cid, info["name"]), daemon=True)
-            state.nc_threads[cid] = t
-            t.start()
+def gpdp_worker(bot, state, chat_id, photo_url):
+    while state.gpdp_flags.get(chat_id, False):
+        try:
+            res = requests.get(photo_url, timeout=5)
+            if res.status_code == 200:
+                photo_bytes = io.BytesIO(res.content)
+                photo_bytes.name = "gpdp.jpg"
+                bot.set_chat_photo(chat_id, photo_bytes)
+        except Exception as e:
+            logger.warning(f"GPDP Update Error: {e}")
+        time.sleep(state.gpdp_delay.get(chat_id, 2.0))
 
 def get_target_user(message):
     if message.reply_to_message and message.reply_to_message.from_user:
         return message.reply_to_message.from_user.id
-    parts = message.text.strip().split(None, 1)
+    parts = message.text.strip().split(None, 2) if message.text else []
     if len(parts) > 1:
         first_arg = parts[1].split()[0]
         if first_arg.isdigit():
@@ -215,413 +413,418 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         uid = message.from_user.id if message.from_user else None
         return uid is not None and state.is_admin(uid)
 
-    def save():
-        save_all_states()
-
-    @bot.message_handler(commands=["start", "menu"])
-    def send_menu(message):
-        if not admin_only(message):
-            return
-        bot.reply_to(message,
-            "🔥 <b><u>𝑽𝑰𝑽𝑬𝑲 𝑴𝑼𝑳𝑻𝑰-𝑩𝑶𝑻 𝑬𝑵𝑮𝑰𝑵𝑬</u></b> [" + label + "] 🔥\n"
-            "⚡ <i>POWERED BY VIVEK TIWARI</i> ⚡\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "🚀 <b>[ 𝗦𝗣𝗔𝗠 &amp; 𝗡𝗖 ]</b>\n"
-            "  ✦ <code>/spam &lt;msg&gt;</code> | <code>/spamoff</code>\n"
-            "  ✦ <code>/nc &lt;name&gt;</code> | <code>/ncoff</code>\n\n"
-            "👑 <b>[ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗜𝗘𝗦 ]</b>\n"
-            "  ✦ <code>Reply + /autoreply &lt;text&gt;</code>\n"
-            "  ✦ <code>Reply + /autophoto &lt;url&gt;</code>\n"
-            "  ✦ <code>Reply + /autosticker &lt;id&gt;</code>\n"
-            "  ✦ <code>Reply + /stopreply</code>\n\n"
-            "🔍 <b>[ 𝗜𝗡𝗙𝗢 &amp; 𝗠𝗢𝗗 ]</b>\n"
-            "  ✦ <code>Reply + /info</code> — Get User Info &amp; DP\n"
-            "  ✦ <code>Reply + /del</code> — Delete 100 Messages Upward\n"
-            "  ✦ <code>Reply + /auto_delete</code> — Auto Delete User Msgs\n"
-            "  ✦ <code>Reply + /react &lt;emoji&gt;</code> | <code>/stopreact</code>\n\n"
-            "🔱 <b>[ 𝗔𝗗𝗠𝗜𝗡 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 ]</b>\n"
-            "  ✦ <code>/status</code> — System Monitor\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "👑 <i>DESIGNED BY VIVEK</i> 👑",
-            parse_mode="HTML"
-        )
-
-    # ==========================================
-    # 🔍 USER INFO COMMAND (/info)
-    # ==========================================
-    @bot.message_handler(commands=["info"])
-    def user_info_cmd(message):
-        if not admin_only(message): return
-        
-        target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
-        chat_id = message.chat.id
-        
-        info_text = (
-            f"👤 <b><u>USER INFORMATION</u></b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 <b>User ID:</b> <code>{target.id}</code>\n"
-            f"📛 <b>First Name:</b> {target.first_name}\n"
-            f"🏷️ <b>Last Name:</b> {target.last_name or 'None'}\n"
-            f"🌐 <b>Username:</b> @{target.username if target.username else 'None'}\n"
-            f"🤖 <b>Is Bot:</b> {'Yes' if target.is_bot else 'No'}\n"
-            f"━━━━━━━━━━━━━━━━━━━━"
-        )
-
+    def send_and_react(chat_id, text, **kwargs):
+        msg = bot.send_message(chat_id, text, **kwargs)
         try:
-            photos = bot.get_user_profile_photos(target.id, limit=1)
-            if photos.total_count > 0:
-                file_id = photos.photos[0][-1].file_id
-                bot.send_photo(chat_id, file_id, caption=info_text, parse_mode="HTML", reply_to_message_id=message.message_id)
-            else:
-                bot.reply_to(message, info_text + "\n🖼️ <i>No profile photo available.</i>", parse_mode="HTML")
+            bot.set_message_reaction(chat_id, msg.message_id, [telebot.types.ReactionTypeEmoji("🤣")])
         except Exception:
-            bot.reply_to(message, info_text, parse_mode="HTML")
+            pass
+        return msg
 
     # ==========================================
-    # 🧹 CUSTOM UPWARD DELETE (/del 100 MSGS)
+    # 👑 WELCOME SLAVE ENTRY HANDLER
     # ==========================================
-    @bot.message_handler(commands=["del"])
-    def delete_upward_msgs(message):
-        if not admin_only(message): return
-        if not message.reply_to_message:
-            bot.reply_to(message, "❌ **Kisi message par reply karke `/del` likho!**")
-            return
+    @bot.message_handler(content_types=['new_chat_members'])
+    def on_bot_joined(message):
+        for member in message.new_chat_members:
+            if member.id == bot.get_me().id:
+                slave_welcome_msg = "We stand in the shadow of vivek Bend your knees! 🦁"
+                send_and_react(message.chat.id, slave_welcome_msg)
 
-        chat_id = message.chat.id
-        start_msg_id = message.reply_to_message.message_id
+    # ==========================================
+    # 📜 MENU COMMAND HANDLER (VMENU)
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "menu" and admin_only(m))
+    def cmd_vmenu(message):
+        menu_text = (
+            "__________________________________\n"
+            "𝘵𝘩𝘦 𝘴𝘭𝘢𝘷𝘦𝘴 𝘢𝘳𝘦 𝘢𝘭𝘳𝘦𝘢𝘥𝘺 𝘰𝘯 𝘢𝘤𝘵𝘪𝘰𝘯 𝘓𝘰𝘳𝘥 🩸\n"
+            "𝘤𝘰𝘮𝘮𝘢𝘯𝘥 𝘶𝘴 𝘵𝘰 𝘮𝘢𝘬𝘦 𝘦𝘮 𝘣𝘭𝘦𝘦𝘥!\n"
+            "_________________________________\n"
+            "𝘊𝘩𝘦𝘤𝘬 𝘔𝘦𝘯𝘶 𝘖𝘯 𝘓𝘶𝘹𝘶𝘳𝘪𝘰𝘴 𝘞𝘦𝘣𝘴𝘪𝘵𝘦"
+        )
         
-        deleted_count = 0
-        # Target message id se lekar uske upar ke 100 messages tak delete karega
-        for msg_id in range(start_msg_id, start_msg_id - 100, -1):
-            try:
-                bot.delete_message(chat_id, msg_id)
-                deleted_count += 1
-            except Exception:
-                pass
-        
+        markup = InlineKeyboardMarkup()
+        web_button = InlineKeyboardButton(text="Vivek's domain 🌐", url=render_web_url)
+        markup.add(web_button)
+
+        msg = bot.send_message(message.chat.id, menu_text, reply_markup=markup)
         try:
-            bot.delete_message(chat_id, message.message_id)
+            bot.set_message_reaction(message.chat.id, msg.message_id, [telebot.types.ReactionTypeEmoji("🤣")])
         except Exception:
             pass
 
-    @bot.message_handler(commands=["spam"])
-    def handle_spam_cmd(message):
-        if not admin_only(message): return
-        chat_id = message.chat.id
-        text = normalize(message.text)
-        if text.lower() == "spam off":
-            state.spam_flags[chat_id] = False
-            state.spam_msgs.pop(chat_id, None)
-            save()
-            bot.reply_to(message, "🔥 Spam stopped!")
-            return
-        if text.lower().startswith("spam delay"):
-            parts = text.split()
-            if len(parts) >= 3 and parts[2].isdigit():
-                state.spam_delay[chat_id] = int(parts[2]) / 1000.0
-                save()
-                bot.reply_to(message, f"⚡ Spam delay: {parts[2]}ms")
-            return
-        parts = text.split(" ", 1)
-        if len(parts) < 2: return
-        spam_msg = parts[1].strip()
-        state.spam_flags[chat_id] = False
-        time.sleep(0.1)
-        state.spam_flags[chat_id] = True
-        state.spam_msgs[chat_id] = spam_msg
-        save()
-        t = threading.Thread(target=spam_worker, args=(bot, state, chat_id, spam_msg), daemon=True)
-        state.spam_threads[chat_id] = t
-        t.start()
-        bot.reply_to(message, f"🚀 Fast Spamming Started: \"{spam_msg}\"")
-
-    @bot.message_handler(commands=["spamoff"])
-    def spam_off_cmd(message):
-        if not admin_only(message): return
-        state.spam_flags[message.chat.id] = False
-        state.spam_msgs.pop(message.chat.id, None)
-        save()
-        bot.reply_to(message, "🔥 Spam stopped!")
-
-    @bot.message_handler(commands=["nc"])
-    def handle_nc_cmd(message):
-        if not admin_only(message): return
-        if message.chat.type == "private": return
-        chat_id = message.chat.id
-        text = normalize(message.text)
-        if text.lower() == "nc off":
-            state.nc_flags[chat_id] = False
-            state.nc_names.pop(chat_id, None)
-            save()
-            bot.reply_to(message, "🔥 NC stopped!")
-            return
-        if text.lower().startswith("nc delay"):
-            parts = text.split()
-            if len(parts) >= 3 and parts[2].isdigit():
-                state.nc_delay[chat_id] = int(parts[2]) / 1000.0
-                save()
-                bot.reply_to(message, f"⚡ NC delay: {parts[2]}ms")
-            return
-        parts = text.split(" ", 1)
-        if len(parts) < 2: return
-        base_name = parts[1].strip()
-        state.nc_flags[chat_id] = False
-        time.sleep(0.1)
-        state.nc_flags[chat_id] = True
-        state.nc_names[chat_id] = base_name
-        save()
-        t = threading.Thread(target=nc_worker, args=(bot, state, chat_id, base_name), daemon=True)
-        state.nc_threads[chat_id] = t
-        t.start()
-        bot.reply_to(message, f"⚡ Fast NC Started: '{base_name}'")
-
-    @bot.message_handler(commands=["ncoff"])
-    def nc_off_cmd(message):
-        if not admin_only(message): return
-        state.nc_flags[message.chat.id] = False
-        state.nc_names.pop(message.chat.id, None)
-        save()
-        bot.reply_to(message, "🔥 NC stopped!")
-
-    # Auto Reply Commands
-    @bot.message_handler(commands=["autoreply"])
-    def set_autoreply(message):
-        if not admin_only(message): return
-        target_id = get_target_user(message)
-        if not target_id:
-            bot.reply_to(message, "❌ **Kisi user ke message par reply karo ya User ID likho!**")
-            return
-
-        parts = message.text.split(None, 1)
-        if message.reply_to_message:
-            text = parts[1].strip() if len(parts) > 1 else ""
+    # ==========================================
+    # 🎨 WEB BACKGROUND & RENDER URL SETTERS
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.caption and normalize_cmd(m.caption) == "webbg" and admin_only(m), content_types=['photo'])
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "webbg" and admin_only(m), content_types=['text'])
+    def cmd_webbg(message):
+        global bg_image_url
+        file_id = None
+        
+        if message.photo:
+            file_id = message.photo[-1].file_id
+        elif message.reply_to_message and message.reply_to_message.photo:
+            file_id = message.reply_to_message.photo[-1].file_id
+            
+        if file_id:
+            msg = send_and_react(message.chat.id, "⏳ Uploading Image to Web Server...")
+            direct_url = upload_to_web(bot, file_id)
+            if direct_url:
+                bg_image_url = direct_url
+                send_and_react(message.chat.id, f"🎨 <b>WEB MENU BACKGROUND UPDATED!</b>\n\n🔗 <b>Image Link:</b> {direct_url}", parse_mode="HTML")
+            else:
+                send_and_react(message.chat.id, "❌ Failed to upload image. Please provide a direct Image URL!")
         else:
-            args = parts[1].split(None, 1) if len(parts) > 1 else []
-            text = args[1].strip() if len(args) > 1 else ""
+            parts = normalize_cmd(message.text).split(None, 1) if message.text else []
+            if len(parts) > 1 and parts[1].startswith("http"):
+                bg_image_url = parts[1].strip()
+                send_and_react(message.chat.id, "🎨 <b>Web Menu Background URL Updated!</b>", parse_mode="HTML")
+            else:
+                send_and_react(message.chat.id, "❌ Reply to a photo with `vwebbg`, send a photo with `vwebbg` caption, or use `vwebbg <image_url>`", parse_mode="Markdown")
 
-        if not text:
-            bot.reply_to(message, "❌ **Auto-reply text type karo!**")
-            return
-
-        state.auto_reply[target_id] = text
-        save()
-        bot.reply_to(message, f"💬 **Auto Text Reply set for target:** `{target_id}`", parse_mode="Markdown")
-
-    @bot.message_handler(commands=["autophoto"])
-    def set_autophoto(message):
-        if not admin_only(message): return
-        target_id = get_target_user(message)
-        if not target_id:
-            bot.reply_to(message, "❌ **Kisi user ke message par reply karo ya User ID likho!**")
-            return
-
-        parts = message.text.split(None, 1)
-        if message.reply_to_message:
-            url = parts[1].strip() if len(parts) > 1 else ""
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("weburl ") and admin_only(m))
+    def cmd_weburl(message):
+        global render_web_url
+        new_url = normalize_cmd(message.text)[7:].strip()
+        if new_url.startswith("http"):
+            render_web_url = new_url
+            send_and_react(message.chat.id, f"🔗 <b>Render Web URL Updated!</b>\n\nNew URL: <code>{render_web_url}</code>", parse_mode="HTML")
         else:
-            args = parts[1].split(None, 1) if len(parts) > 1 else []
-            url = args[1].strip() if len(args) > 1 else ""
+            send_and_react(message.chat.id, "❌ Please provide a valid Render URL (e.g. `vweburl https://my-bot-zlmx.onrender.com/`)", parse_mode="Markdown")
 
-        if not url:
-            bot.reply_to(message, "❌ **Photo URL paste karo!**")
+    # ==========================================
+    # ⚡ UNIVERSAL DELAY COMMAND (VFLOW)
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("flow ") and admin_only(m))
+    def cmd_vflow(message):
+        parts = normalize_cmd(message.text).split()
+        if len(parts) < 2:
+            send_and_react(message.chat.id, "❌ Usage: `vflow <delay_seconds>`", parse_mode="Markdown")
             return
-
-        state.auto_photo[target_id] = url
-        save()
-        bot.reply_to(message, f"🖼️ **Auto Photo Reply set for target:** `{target_id}`", parse_mode="Markdown")
-
-    @bot.message_handler(commands=["autosticker"])
-    def set_autosticker(message):
-        if not admin_only(message): return
-        target_id = get_target_user(message)
-        if not target_id:
-            bot.reply_to(message, "❌ **Kisi user ke message par reply karo ya User ID likho!**")
-            return
-
-        parts = message.text.split(None, 1)
-        if message.reply_to_message:
-            stk_id = parts[1].strip() if len(parts) > 1 else ""
-        else:
-            args = parts[1].split(None, 1) if len(parts) > 1 else []
-            stk_id = args[1].strip() if len(args) > 1 else ""
-
-        if not stk_id:
-            bot.reply_to(message, "❌ **Sticker File ID paste karo!**")
-            return
-
-        state.auto_sticker[target_id] = stk_id
-        save()
-        bot.reply_to(message, f"🎯 **Auto Sticker Reply set for target:** `{target_id}`", parse_mode="Markdown")
-
-    @bot.message_handler(commands=["stopreply"])
-    def stop_replies(message):
-        if not admin_only(message): return
-        target_id = get_target_user(message)
-        if target_id:
-            state.auto_reply.pop(target_id, None)
-            state.auto_photo.pop(target_id, None)
-            state.auto_sticker.pop(target_id, None)
-            save()
-            bot.reply_to(message, f"🔥 **Target user (`{target_id}`) ke saare auto replies stop kar diye gaye hain!**", parse_mode="Markdown")
-        else:
+        try:
+            delay = float(parts[1])
+            if delay < 0.01:
+                delay = 0.01
             cid = message.chat.id
-            state.auto_reply.pop(cid, None)
-            state.auto_photo.pop(cid, None)
-            state.auto_sticker.pop(cid, None)
-            save()
-            bot.reply_to(message, "🔥 All Auto Replies Stopped for this Chat!")
+            state.spam_delay[cid] = delay
+            state.nc_delay[cid] = delay
+            state.hunt_delay[cid] = delay
+            state.gpdp_delay[cid] = delay
+            save_all_states()
+            send_and_react(message.chat.id, f"⚡ <b>Universal Delay Set To {delay} Seconds!</b>", parse_mode="HTML")
+        except ValueError:
+            send_and_react(message.chat.id, "❌ Please enter a valid number for delay.")
 
-    @bot.message_handler(commands=["auto_delete", "autodelete"])
-    def handle_auto_delete(message):
-        if not admin_only(message): return
-        chat_id = message.chat.id
-        target_id = get_target_user(message)
-
-        parts = message.text.strip().split(None, 1)
-        arg = parts[1].strip().lower() if len(parts) > 1 else ""
-
-        if arg == "off":
-            state.auto_delete.pop(chat_id, None)
-            save()
-            bot.reply_to(message, "💀 Auto delete disabled for this chat!")
+    # ==========================================
+    # 🚀 SPAM, NC, HUNT & GROUP DP COMMANDS
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("spam ") and admin_only(m))
+    def cmd_spam(message):
+        text = normalize_cmd(message.text)[5:].strip()
+        if not text:
+            send_and_react(message.chat.id, "❌ Please enter a message: `vspam <message>`", parse_mode="Markdown")
             return
+        cid = message.chat.id
+        state.spam_flags[cid] = True
+        state.spam_msgs[cid] = text
+        t = Thread(target=spam_worker, args=(bot, state, cid, text), daemon=True)
+        state.spam_threads[cid] = t
+        t.start()
+        save_all_states()
+        send_and_react(message.chat.id, "🚀 SPAM STARTED SUCCESSFULLY! 🔥")
 
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "spamoff" and admin_only(m))
+    def cmd_spamoff(message):
+        cid = message.chat.id
+        state.spam_flags[cid] = False
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 SPAM STOPPED!")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("nc ") and admin_only(m))
+    def cmd_nc(message):
+        name = normalize_cmd(message.text)[3:].strip()
+        if not name:
+            send_and_react(message.chat.id, "❌ Please enter a name: `vnc <Group Name>`", parse_mode="Markdown")
+            return
+        cid = message.chat.id
+        state.nc_flags[cid] = True
+        state.nc_names[cid] = name
+        t = Thread(target=nc_worker, args=(bot, state, cid, name), daemon=True)
+        state.nc_threads[cid] = t
+        t.start()
+        save_all_states()
+        send_and_react(message.chat.id, "⚡ NAME CHANGER LOOP STARTED!")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "ncoff" and admin_only(m))
+    def cmd_ncoff(message):
+        cid = message.chat.id
+        state.nc_flags[cid] = False
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 NAME CHANGER LOOP STOPPED!")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("hunt") and admin_only(m))
+    def cmd_hunt(message):
+        target_id = get_target_user(message)
         if not target_id:
-            bot.reply_to(message, "❌ **User ke message par reply karo ya User ID likho!**")
+            send_and_react(message.chat.id, "❌ Reply to a user or provide ID: `vhunt <userID>`", parse_mode="Markdown")
             return
+        cid = message.chat.id
+        state.hunt_flags[cid] = True
+        state.hunt_targets[cid] = target_id
+        t = Thread(target=hunt_worker, args=(bot, state, cid, target_id), daemon=True)
+        state.hunt_threads[cid] = t
+        t.start()
+        save_all_states()
+        send_and_react(message.chat.id, f"⚔️ HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
 
-        state.auto_delete.setdefault(chat_id, set()).add(target_id)
-        save()
-        bot.reply_to(message, f"🎯 Auto delete ON for target: `{target_id}`", parse_mode="Markdown")
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "huntoff" and admin_only(m))
+    def cmd_huntoff(message):
+        cid = message.chat.id
+        state.hunt_flags[cid] = False
+        state.hunt_targets[cid] = None
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 HUNTING STOPPED!")
 
-    @bot.message_handler(commands=["react"])
-    def handle_react(message):
-        if not admin_only(message): return
-        target_id = get_target_user(message)
-        parts = message.text.strip().split(None, 1)
-
-        if message.reply_to_message:
-            emoji = parts[1].strip() if len(parts) > 1 else ""
-        else:
-            args = parts[1].split(None, 1) if len(parts) > 1 else []
-            emoji = args[1].strip() if len(args) > 1 else ""
-
-        if not emoji:
-            bot.reply_to(message, "❌ **Emoji type karo!** Example: `/react 😂`")
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("gpdp ") and admin_only(m))
+    def cmd_gpdp(message):
+        url = normalize_cmd(message.text)[5:].strip()
+        if not url.startswith("http"):
+            send_and_react(message.chat.id, "❌ Please provide a valid Image URL: `vgpdp <URL>`", parse_mode="Markdown")
             return
+        cid = message.chat.id
+        state.gpdp_flags[cid] = True
+        state.gpdp_urls[cid] = url
+        t = Thread(target=gpdp_worker, args=(bot, state, cid, url), daemon=True)
+        state.gpdp_threads[cid] = t
+        t.start()
+        save_all_states()
+        send_and_react(message.chat.id, "🖼️ GROUP DP AUTO-CHANGER STARTED!")
 
-        key = target_id if target_id else message.chat.id
-        state.auto_react[key] = emoji
-        save()
-        bot.reply_to(message, f"⚡ Auto react set to `{emoji}` for ID `{key}`", parse_mode="Markdown")
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "gpdpoff" and admin_only(m))
+    def cmd_gpdpoff(message):
+        cid = message.chat.id
+        state.gpdp_flags[cid] = False
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 GROUP DP LOOP STOPPED!")
 
-    @bot.message_handler(commands=["stopreact"])
-    def stop_react(message):
-        if not admin_only(message): return
+    # ==========================================
+    # 👑 AUTO REPLIES & AUTO REACTS
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autoreply") and admin_only(m))
+    def cmd_autoreply(message):
         target_id = get_target_user(message)
-        key = target_id if target_id else message.chat.id
-        state.auto_react.pop(key, None)
-        save()
-        bot.reply_to(message, f"🔥 Auto react disabled for ID `{key}`", parse_mode="Markdown")
+        parts = message.text.strip().split(None, 2)
+        if not target_id or len(parts) < 3:
+            send_and_react(message.chat.id, "❌ Reply to user or specify ID & text: `vautoreply <userID> <text>`", parse_mode="Markdown")
+            return
+        text = parts[2] if parts[1].isdigit() else message.text.split(None, 1)[1]
+        cid = message.chat.id
+        state.auto_reply[(cid, target_id)] = text
+        save_all_states()
+        send_and_react(message.chat.id, f"👑 AUTO-REPLY SET FOR `{target_id}`!", parse_mode="Markdown")
 
-    @bot.message_handler(commands=["status"])
-    def show_status(message):
-        if not admin_only(message): return
-        chat_id = message.chat.id
-        yn = lambda v: "ON ⚡" if v else "OFF ❌"
-        bot.reply_to(message,
-            f"👑 <b>[{label}] System Status</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"Spam          : {yn(state.spam_flags.get(chat_id))}\n"
-            f"Fast NC       : {yn(state.nc_flags.get(chat_id))}\n"
-            f"Target Replies: {len(state.auto_reply)}\n"
-            f"Target Photos : {len(state.auto_photo)}\n"
-            f"Target Sticker: {len(state.auto_sticker)}\n"
-            f"Auto Delete   : {len(state.auto_delete.get(chat_id, []))} targets\n"
-            f"Subadmins     : {len(state.subadmins)}",
-            parse_mode="HTML"
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autophoto") and admin_only(m))
+    def cmd_autophoto(message):
+        target_id = get_target_user(message)
+        parts = normalize_cmd(message.text).split(None, 2)
+        if not target_id or len(parts) < 2:
+            send_and_react(message.chat.id, "❌ Reply or specify user & URL: `vautophoto <userID> <photo_url>`", parse_mode="Markdown")
+            return
+        url = parts[-1]
+        cid = message.chat.id
+        state.auto_photo[(cid, target_id)] = url
+        save_all_states()
+        send_and_react(message.chat.id, f"🖼️ AUTO-PHOTO SET FOR `{target_id}`!", parse_mode="Markdown")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autosticker") and admin_only(m))
+    def cmd_autosticker(message):
+        target_id = get_target_user(message)
+        parts = normalize_cmd(message.text).split(None, 2)
+        if not target_id or len(parts) < 2:
+            send_and_react(message.chat.id, "❌ Reply or specify user & Sticker ID: `vautosticker <userID> <sticker_file_id>`", parse_mode="Markdown")
+            return
+        sticker_id = parts[-1]
+        cid = message.chat.id
+        state.auto_sticker[(cid, target_id)] = sticker_id
+        save_all_states()
+        send_and_react(message.chat.id, f"🎯 AUTO-STICKER SET FOR `{target_id}`!", parse_mode="Markdown")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("react ") and admin_only(m))
+    def cmd_react(message):
+        target_id = get_target_user(message)
+        parts = normalize_cmd(message.text).split()
+        if not target_id or len(parts) < 2:
+            send_and_react(message.chat.id, "❌ Please enter an Emoji: `vreact <emoji> <userID>`", parse_mode="Markdown")
+            return
+        emoji = parts[1]
+        cid = message.chat.id
+        state.auto_react[(cid, target_id)] = emoji
+        save_all_states()
+        send_and_react(message.chat.id, f"👑 AUTO-REACT `{emoji}` SET FOR `{target_id}`!", parse_mode="Markdown")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "stopreact" and admin_only(m))
+    def cmd_stopreact(message):
+        cid = message.chat.id
+        keys_to_del = [k for k in state.auto_react if k[0] == cid]
+        for k in keys_to_del:
+            del state.auto_react[k]
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 AUTO-REACTS STOPPED!")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "stopreply" and admin_only(m))
+    def cmd_stopreply(message):
+        cid = message.chat.id
+        for store in (state.auto_reply, state.auto_photo, state.auto_sticker):
+            keys = [k for k in store if k[0] == cid]
+            for k in keys:
+                del store[k]
+        save_all_states()
+        send_and_react(message.chat.id, "🛑 ALL AUTO REPLIES STOPPED!")
+
+    # ==========================================
+    # 🔍 INFO & MODERATION COMMANDS
+    # ==========================================
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "info" and admin_only(m))
+    def cmd_info(message):
+        target_user = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+        info_text = (
+            f"🔍 <b>USER INFORMATION</b>\n\n"
+            f"👤 <b>Name:</b> {target_user.first_name} {target_user.last_name or ''}\n"
+            f"🆔 <b>User ID:</b> <code>{target_user.id}</code>\n"
+            f"🌐 <b>Username:</b> @{target_user.username if target_user.username else 'N/A'}\n"
+            f"🤖 <b>Is Bot:</b> {target_user.is_bot}"
         )
+        try:
+            photos = bot.get_user_profile_photos(target_user.id, limit=1)
+            if photos.total_count > 0:
+                bot.send_photo(message.chat.id, photos.photos[0][-1].file_id, caption=info_text, parse_mode="HTML")
+            else:
+                send_and_react(message.chat.id, info_text, parse_mode="HTML")
+        except Exception:
+            send_and_react(message.chat.id, info_text, parse_mode="HTML")
 
-    # Main Message Handler Loop
-    @bot.message_handler(func=lambda m: True, content_types=["text","photo","sticker","video","audio","document","voice","animation"])
-    def on_any_message(message):
-        chat_id = message.chat.id
-        user_id = message.from_user.id if message.from_user else None
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "del" and admin_only(m))
+    def cmd_del(message):
+        cid = message.chat.id
+        mid = message.message_id
+        deleted = 0
+        for i in range(mid, max(mid - 100, 0), -1):
+            try:
+                if bot.delete_message(cid, i):
+                    deleted += 1
+            except Exception:
+                pass
+        send_and_react(cid, f"🗑️ Cleaned {deleted} messages!")
 
-        if not user_id:
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autodelete") and admin_only(m))
+    def cmd_autodelete(message):
+        target_id = get_target_user(message)
+        if not target_id:
+            send_and_react(message.chat.id, "❌ Reply to user or provide ID: `vautodelete <userID>`", parse_mode="Markdown")
             return
+        cid = message.chat.id
+        if cid not in state.auto_delete:
+            state.auto_delete[cid] = set()
+        state.auto_delete[cid].add(target_id)
+        save_all_states()
+        send_and_react(message.chat.id, f"🗑️ AUTO-DELETE ENABLED FOR `{target_id}`!", parse_mode="Markdown")
+
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "status" and admin_only(m))
+    def cmd_status(message):
+        cid = message.chat.id
+        status_msg = (
+            f"⚡ <b>VIVEK ENGINE STATUS</b>\n\n"
+            f"🚀 <b>Spam Active:</b> {state.spam_flags.get(cid, False)}\n"
+            f"⚡ <b>NC Loop Active:</b> {state.nc_flags.get(cid, False)}\n"
+            f"⚔️ <b>Hunt Target:</b> {state.hunt_targets.get(cid, 'None')}\n"
+            f"🖼️ <b>Group DP Loop:</b> {state.gpdp_flags.get(cid, False)}\n"
+            f"⏱️ <b>Current Delay:</b> {state.spam_delay.get(cid, 0.1)}s"
+        )
+        send_and_react(cid, status_msg, parse_mode="HTML")
+
+    # ==========================================
+    # 📩 GLOBAL MESSAGE EVENT LISTENER
+    # ==========================================
+    @bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'sticker', 'animation'])
+    def handle_all_messages(message):
+        if not message.from_user:
+            return
+        
+        cid = message.chat.id
+        uid = message.from_user.id
 
         # 1. Auto Delete Check
-        if chat_id in state.auto_delete and user_id in state.auto_delete[chat_id]:
-            try: bot.delete_message(chat_id, message.message_id)
-            except Exception: pass
-            return
+        if cid in state.auto_delete and uid in state.auto_delete[cid]:
+            try:
+                bot.delete_message(cid, message.message_id)
+                return
+            except Exception:
+                pass
 
-        # Don't trigger auto-replies on own bot or admin commands
-        if message.text and message.text.startswith("/"):
-            return
+        # 2. Auto Reaction
+        if (cid, uid) in state.auto_react:
+            try:
+                emoji = state.auto_react[(cid, uid)]
+                bot.set_message_reaction(cid, message.message_id, [telebot.types.ReactionTypeEmoji(emoji)])
+            except Exception:
+                pass
 
-        # 2. Target User / Chat Auto React
-        react_key = user_id if user_id in state.auto_react else (chat_id if chat_id in state.auto_react else None)
-        if react_key:
-            try: bot.set_message_reaction(chat_id, message.message_id, [telebot.types.ReactionTypeEmoji(state.auto_react[react_key])])
-            except Exception: pass
+        # 3. Auto Text Reply
+        if (cid, uid) in state.auto_reply:
+            try:
+                bot.reply_to(message, state.auto_reply[(cid, uid)])
+            except Exception:
+                pass
 
-        # 3. Target User / Chat Auto Text Reply
-        reply_key = user_id if user_id in state.auto_reply else (chat_id if chat_id in state.auto_reply else None)
-        if reply_key:
-            try: bot.reply_to(message, state.auto_reply[reply_key])
-            except Exception: pass
+        # 4. Auto Photo Reply
+        if (cid, uid) in state.auto_photo:
+            try:
+                bot.send_photo(cid, state.auto_photo[(cid, uid)], reply_to_message_id=message.message_id)
+            except Exception:
+                pass
 
-        # 4. Target User / Chat Auto Photo Reply
-        photo_key = user_id if user_id in state.auto_photo else (chat_id if chat_id in state.auto_photo else None)
-        if photo_key:
-            try: bot.send_photo(chat_id, state.auto_photo[photo_key], reply_to_message_id=message.message_id)
-            except Exception: pass
+        # 5. Auto Sticker Reply
+        if (cid, uid) in state.auto_sticker:
+            try:
+                bot.send_sticker(cid, state.auto_sticker[(cid, uid)], reply_to_message_id=message.message_id)
+            except Exception:
+                pass
 
-        # 5. Target User / Chat Auto Sticker Reply
-        sticker_key = user_id if user_id in state.auto_sticker else (chat_id if chat_id in state.auto_sticker else None)
-        if sticker_key:
-            try: bot.send_sticker(chat_id, state.auto_sticker[sticker_key], reply_to_message_id=message.message_id)
-            except Exception: pass
+# ==========================================
+# 🚀 MAIN BOT INITIATION
+# ==========================================
+def main():
+    keep_alive()
+    threads = []
+    
+    for idx, token in enumerate(BOT_TOKENS, 1):
+        label = f"Bot-{idx}"
+        # ThreadPoolExecutor to handle message events simultaneously (Speed optimization)
+        bot = telebot.TeleBot(token, parse_mode=None, threaded=True, num_threads=20)
+        state = BotState()
+        _all_states[label] = state
+        
+        register_handlers(bot, state, label)
+        
+        def start_polling(b=bot, l=label):
+            logger.info(f"Starting polling for {l}...")
+            while True:
+                try:
+                    # Low latency parameters for fast response
+                    b.infinity_polling(timeout=10, long_polling_timeout=2)
+                except Exception as e:
+                    logger.error(f"Error on {l}: {e}")
+                    time.sleep(1)
 
-def start_bot(token: str, label: str):
-    logger.info(f"Starting [{label}] ...")
-    bot = telebot.TeleBot(token, parse_mode=None)
-    state = BotState()
-    _all_states[label] = state
-    register_handlers(bot, state, label)
-    try:
-        me = bot.get_me()
-        logger.info(f"[{label}] Connected as @{me.username}")
-    except Exception as e:
-        logger.error(f"[{label}] Failed: {e}")
-        return
-    resume_state(label, state, bot)
-    while True:
-        try:
-            bot.infinity_polling(timeout=15, long_polling_timeout=10)
-        except Exception as e:
-            logger.warning(f"[{label}] Error: {e} — Retrying in 5s")
-            time.sleep(5)
+        t = Thread(target=start_polling, daemon=True)
+        t.start()
+        threads.append(t)
+
+    logger.info("All Multi-Bot Instances Running Successfully!")
+    for t in threads:
+        t.join()
 
 if __name__ == "__main__":
-    if not OWNER_IDS or not BOT_TOKENS:
-        sys.exit(1)
-
-    # 1. Start Flask Keep-Alive Server
-    keep_alive()
-
-    print(f"🔥 VIVEK ENGINE ONLINE | Owners: {len(OWNER_IDS)} | Bots Active: {len(BOT_TOKENS)}")
-
-    # 2. Start Bot Threads
-    for idx, token in enumerate(BOT_TOKENS, start=1):
-        t = threading.Thread(target=start_bot, args=(token, f"Bot{idx}"), daemon=True)
-        t.start()
-        time.sleep(0.5)
-
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        print("\nEngine Shutdown 👋")
+    main()
