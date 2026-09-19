@@ -438,7 +438,15 @@ def hunt_worker(bot, state, chat_id, target_id):
             line_idx += 1
         except Exception:
             pass
-        time.sleep(state.hunt_delay.get(chat_id, 0.5))
+        
+        total_delay = state.hunt_delay.get(chat_id, 0.5)
+        elapsed = 0
+        while elapsed < total_delay:
+            if not state.hunt_flags.get(chat_id, False) or state.hunt_targets.get(chat_id) != target_id:
+                return
+            time.sleep(0.1)
+            elapsed += 0.1
+
 
 def gpdp_worker(bot, state, chat_id, photo_url):
     while state.gpdp_flags.get(chat_id, False):
@@ -639,6 +647,7 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         send_and_react(message.chat.id, f"⚔️ HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "huntoff" and admin_only(m))
+    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "huntoff" and admin_only(m))
     def cmd_huntoff(message):
         cid = message.chat.id
         for _, st, _ in _bot_instances_list:
@@ -646,6 +655,7 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             st.hunt_targets[cid] = None
         save_all_states()
         send_and_react(message.chat.id, "🛑 HUNTING STOPPED ACROSS ALL BOTS!")
+
 
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("gpdp ") and admin_only(m))
