@@ -439,13 +439,15 @@ def hunt_worker(bot, state, chat_id, target_id):
         except Exception:
             pass
         
+        # Super-fast check loop (0.05s interval) taaki command turant pakad le
         total_delay = state.hunt_delay.get(chat_id, 0.5)
         elapsed = 0
         while elapsed < total_delay:
             if not state.hunt_flags.get(chat_id, False) or state.hunt_targets.get(chat_id) != target_id:
                 return
-            time.sleep(0.1)
-            elapsed += 0.1
+            time.sleep(0.05)
+            elapsed += 0.05
+
 
 
 def gpdp_worker(bot, state, chat_id, photo_url):
@@ -640,22 +642,26 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         cid = message.chat.id
         state.hunt_flags[cid] = True
         state.hunt_targets[cid] = target_id
-        t = Thread(target=hunt_worker, args=(bot, state, cid, target_id), daemon=True)
-        state.hunt_threads[cid] = t
-        t.start()
+        
+        # Check karo agar thread pehle se nahi chal raha tabhi naya thread shuru karo
+        if cid not in state.hunt_threads or not state.hunt_threads[cid].is_alive():
+            t = Thread(target=hunt_worker, args=(bot, state, cid, target_id), daemon=True)
+            state.hunt_threads[cid] = t
+            t.start()
+            
         save_all_states()
         send_and_react(message.chat.id, f"⚔️ HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
+)
 
-    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "huntoff" and admin_only(m))
-    @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "huntoff" and admin_only(m))
-    def cmd_huntoff(message):
-        cid = message.chat.id
-        for _, st, _ in _bot_instances_list:
-            st.hunt_flags[cid] = False
-            st.hunt_targets[cid] = None
-        save_all_states()
-        send_and_react(message.chat.id, "🛑 HUNTING STOPPED ACROSS ALL BOTS!")
-
+@bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) in ["huntoff", "vhuntoff"] and admin_only(m))
+def cmd_huntoff(message):
+    cid = message.chat.id
+    # Sabhi bot instances ke flags off kar do taaki kahin bhi loop na bache
+    for _, st, _ in _bot_instances_list:
+        st.hunt_flags[cid] = False
+        st.hunt_targets[cid] = None
+    save_all_states()
+    send_and_react(message.chat.id, "🛑 HUNTING STOPPED INSTANTLY!")
 
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("gpdp ") and admin_only(m))
