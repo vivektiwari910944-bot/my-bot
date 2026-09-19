@@ -866,10 +866,12 @@ def main():
             logger.info(f"Starting polling for {l}...")
             while True:
                 try:
-                    b.infinity_polling(timeout=10, long_polling_timeout=3, skip_pending=True)
+                    # Timeout ko 2 aur long_polling ko 1 kar diya taaki command turant catch ho
+                    b.infinity_polling(timeout=2, long_polling_timeout=1, skip_pending=True, interval=0)
                 except Exception as e:
                     logger.error(f"Error on {l}: {e}")
                     time.sleep(1)
+
 
         t = Thread(target=start_polling, daemon=True)
         t.start()
