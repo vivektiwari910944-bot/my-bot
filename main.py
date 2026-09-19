@@ -95,7 +95,6 @@ HTML_TEMPLATE = """
             text-shadow: 0 0 10px #00ffff;
             font-weight: 600;
         }
-        
         .btn-render {
             display: inline-block;
             margin: 10px 0 25px 0;
@@ -121,7 +120,6 @@ HTML_TEMPLATE = """
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
         }
-
         .section-title {
             font-size: 1.35rem;
             color: #ffd700;
@@ -360,7 +358,7 @@ class BotState:
         return user_id in OWNER_IDS or user_id in self.subadmins
 
 # ==========================================
-# 🚀 SUPER FAST THREAD POOL FOR BAWANDAR SPAM & NC
+# 🚀 SUPER FAST THREAD POOL FOR SPAM, NC & HUNT
 # ==========================================
 thread_pool = ThreadPoolExecutor(max_workers=50)
 
@@ -370,7 +368,6 @@ def parallel_spam_worker(chat_id, text):
         if not active_bots:
             break
         
-        # Get custom delay or default to super-fast 0.05s
         sample_state = active_bots[0][1]
         delay = sample_state.spam_delay.get(chat_id, 0.05)
 
@@ -380,7 +377,6 @@ def parallel_spam_worker(chat_id, text):
             except Exception:
                 pass
 
-        # Send messages across all active bots concurrently using thread pool
         futures = []
         for b, st in active_bots:
             if not st.spam_flags.get(chat_id, False):
@@ -413,12 +409,10 @@ def parallel_nc_worker(chat_id, base_name):
             except Exception:
                 pass
 
-        # Change group titles across all active bots concurrently via thread pool
         futures = []
         for b, st in active_bots:
             if not st.nc_flags.get(chat_id, False):
                 continue
-            title_to_set = f"{base_name} {cool_emoji()}"
             futures.append(thread_pool.submit(fire_nc, b, chat_id, base_name))
 
         for f in futures:
@@ -429,26 +423,38 @@ def parallel_nc_worker(chat_id, base_name):
 
         time.sleep(delay)
 
-def hunt_worker(bot, state, chat_id, target_id):
+def parallel_hunt_worker(chat_id, target_id):
     line_idx = 0
-    while state.hunt_flags.get(chat_id, False) and state.hunt_targets.get(chat_id) == target_id:
-        try:
-            line = HUNT_LINES[line_idx % len(HUNT_LINES)]
-            bot.send_message(chat_id, f"<a href='tg://user?id={target_id}'>Target</a> {line}", parse_mode="HTML")
-            line_idx += 1
-        except Exception:
-            pass
-        
-        # Super-fast check loop (0.05s interval) taaki command turant pakad le
-        total_delay = state.hunt_delay.get(chat_id, 0.5)
-        elapsed = 0
-        while elapsed < total_delay:
-            if not state.hunt_flags.get(chat_id, False) or state.hunt_targets.get(chat_id) != target_id:
-                return
-            time.sleep(0.05)
-            elapsed += 0.05
+    while True:
+        # Check active bots that have hunting enabled for this specific target
+        active_bots = [(b, st) for b, st, l in _bot_instances_list if st.hunt_flags.get(chat_id, False) and st.hunt_targets.get(chat_id) == target_id]
+        if not active_bots:
+            break
 
+        sample_state = active_bots[0][1]
+        delay = sample_state.hunt_delay.get(chat_id, 0.5)
+        line = HUNT_LINES[line_idx % len(HUNT_LINES)]
+        line_idx += 1
 
+        def fire_hunt(bot_obj, cid, tid, txt):
+            try:
+                bot_obj.send_message(cid, f"<a href='tg://user?id={tid}'>Target</a> {txt}", parse_mode="HTML")
+            except Exception:
+                pass
+
+        futures = []
+        for b, st in active_bots:
+            if not st.hunt_flags.get(chat_id, False) or st.hunt_targets.get(chat_id) != target_id:
+                continue
+            futures.append(thread_pool.submit(fire_hunt, b, chat_id, target_id, line))
+
+        for f in futures:
+            try:
+                f.result()
+            except Exception:
+                pass
+
+        time.sleep(delay)
 
 def gpdp_worker(bot, state, chat_id, photo_url):
     while state.gpdp_flags.get(chat_id, False):
@@ -486,9 +492,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             pass
         return msg
 
-    # ==========================================
-    # 👑 WELCOME SLAVE ENTRY HANDLER
-    # ==========================================
     @bot.message_handler(content_types=['new_chat_members'])
     def on_bot_joined(message):
         for member in message.new_chat_members:
@@ -496,9 +499,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
                 slave_welcome_msg = "We stand in the shadow of vivek Bend your knees! 🦁"
                 send_and_react(message.chat.id, slave_welcome_msg)
 
-    # ==========================================
-    # 📜 MENU COMMAND HANDLER (VMENU)
-    # ==========================================
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "menu" and admin_only(m))
     def cmd_vmenu(message):
         menu_text = (
@@ -519,9 +519,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         except Exception:
             pass
 
-    # ==========================================
-    # 🎨 WEB BACKGROUND & RENDER URL SETTERS
-    # ==========================================
     @bot.message_handler(func=lambda m: m.caption and normalize_cmd(m.caption) == "webbg" and admin_only(m), content_types=['photo'])
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "webbg" and admin_only(m), content_types=['text'])
     def cmd_webbg(message):
@@ -534,7 +531,7 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             file_id = message.reply_to_message.photo[-1].file_id
             
         if file_id:
-            msg = send_and_react(message.chat.id, "⏳ Uploading Image to Web Server...")
+            send_and_react(message.chat.id, "⏳ Uploading Image to Web Server...")
             direct_url = upload_to_web(bot, file_id)
             if direct_url:
                 bg_image_url = direct_url
@@ -559,9 +556,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         else:
             send_and_react(message.chat.id, "❌ Please provide a valid Render URL (e.g. `vweburl https://my-bot-zlmx.onrender.com/`)", parse_mode="Markdown")
 
-    # ==========================================
-    # ⚡ UNIVERSAL DELAY COMMAND (VFLOW)
-    # ==========================================
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("flow ") and admin_only(m))
     def cmd_vflow(message):
         parts = normalize_cmd(message.text).split()
@@ -582,9 +576,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         except ValueError:
             send_and_react(message.chat.id, "❌ Please enter a valid number for delay.")
 
-    # ==========================================
-    # 🚀 SPAM, NC, HUNT & GROUP DP COMMANDS
-    # ==========================================
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("spam ") and admin_only(m))
     def cmd_spam(message):
         text = normalize_cmd(message.text)[5:].strip()
@@ -595,7 +586,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         state.spam_flags[cid] = True
         state.spam_msgs[cid] = text
         
-        # Start ultra-fast parallel multi-bot spam thread
         t = Thread(target=parallel_spam_worker, args=(cid, text), daemon=True)
         state.spam_threads[cid] = t
         t.start()
@@ -605,7 +595,8 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "spamoff" and admin_only(m))
     def cmd_spamoff(message):
         cid = message.chat.id
-        state.spam_flags[cid] = False
+        for _, st, _ in _bot_instances_list:
+            st.spam_flags[cid] = False
         save_all_states()
         send_and_react(message.chat.id, "🛑 SPAM STOPPED!")
 
@@ -619,7 +610,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         state.nc_flags[cid] = True
         state.nc_names[cid] = name
         
-        # Start ultra-fast parallel multi-bot name changer thread
         t = Thread(target=parallel_nc_worker, args=(cid, name), daemon=True)
         state.nc_threads[cid] = t
         t.start()
@@ -629,7 +619,8 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "ncoff" and admin_only(m))
     def cmd_ncoff(message):
         cid = message.chat.id
-        state.nc_flags[cid] = False
+        for _, st, _ in _bot_instances_list:
+            st.nc_flags[cid] = False
         save_all_states()
         send_and_react(message.chat.id, "🛑 NAME CHANGER LOOP STOPPED!")
 
@@ -640,17 +631,19 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             send_and_react(message.chat.id, "❌ Reply to a user or provide ID: `vhunt <userID>`", parse_mode="Markdown")
             return
         cid = message.chat.id
-        state.hunt_flags[cid] = True
-        state.hunt_targets[cid] = target_id
         
-        # Check karo agar thread pehle se nahi chal raha tabhi naya thread shuru karo
+        # Sabhi instances ke liye target aur flag set kar do taaki saare bots hunt karein
+        for _, st, _ in _bot_instances_list:
+            st.hunt_flags[cid] = True
+            st.hunt_targets[cid] = target_id
+        
         if cid not in state.hunt_threads or not state.hunt_threads[cid].is_alive():
-            t = Thread(target=hunt_worker, args=(bot, state, cid, target_id), daemon=True)
+            t = Thread(target=parallel_hunt_worker, args=(cid, target_id), daemon=True)
             state.hunt_threads[cid] = t
             t.start()
             
         save_all_states()
-        send_and_react(message.chat.id, f"⚔️ HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
+        send_and_react(message.chat.id, f"⚔️ CONTINUOUS MULTI-BOT HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) in ["huntoff", "vhuntoff"] and admin_only(m))
     def cmd_huntoff(message):
@@ -660,8 +653,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             st.hunt_targets[cid] = None
         save_all_states()
         send_and_react(message.chat.id, "🛑 HUNTING STOPPED INSTANTLY!")
-
-
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("gpdp ") and admin_only(m))
     def cmd_gpdp(message):
@@ -685,9 +676,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         save_all_states()
         send_and_react(message.chat.id, "🛑 GROUP DP LOOP STOPPED!")
 
-    # ==========================================
-    # 👑 AUTO REPLIES & AUTO REACTS
-    # ==========================================
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autoreply") and admin_only(m))
     def cmd_autoreply(message):
         target_id = get_target_user(message)
@@ -759,9 +747,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         save_all_states()
         send_and_react(message.chat.id, "🛑 ALL AUTO REPLIES STOPPED!")
 
-    # ==========================================
-    # 🔍 INFO & MODERATION COMMANDS
-    # ==========================================
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "info" and admin_only(m))
     def cmd_info(message):
         target_user = message.reply_to_message.from_user if message.reply_to_message else message.from_user
@@ -820,9 +805,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         )
         send_and_react(cid, status_msg, parse_mode="HTML")
 
-    # ==========================================
-    # 📩 GLOBAL MESSAGE EVENT LISTENER
-    # ==========================================
     @bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'sticker', 'animation'])
     def handle_all_messages(message):
         if not message.from_user:
@@ -831,7 +813,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         cid = message.chat.id
         uid = message.from_user.id
 
-        # 1. Auto Delete Check
         if cid in state.auto_delete and uid in state.auto_delete[cid]:
             try:
                 bot.delete_message(cid, message.message_id)
@@ -839,7 +820,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             except Exception:
                 pass
 
-        # 2. Auto Reaction
         if (cid, uid) in state.auto_react:
             try:
                 emoji = state.auto_react[(cid, uid)]
@@ -847,30 +827,24 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             except Exception:
                 pass
 
-        # 3. Auto Text Reply
         if (cid, uid) in state.auto_reply:
             try:
                 bot.reply_to(message, state.auto_reply[(cid, uid)])
             except Exception:
                 pass
 
-        # 4. Auto Photo Reply
         if (cid, uid) in state.auto_photo:
             try:
                 bot.send_photo(cid, state.auto_photo[(cid, uid)], reply_to_message_id=message.message_id)
             except Exception:
                 pass
 
-        # 5. Auto Sticker Reply
         if (cid, uid) in state.auto_sticker:
             try:
                 bot.send_sticker(cid, state.auto_sticker[(cid, uid)], reply_to_message_id=message.message_id)
             except Exception:
                 pass
 
-# ==========================================
-# 🚀 MAIN BOT INITIATION
-# ==========================================
 def main():
     keep_alive()
     threads = []
