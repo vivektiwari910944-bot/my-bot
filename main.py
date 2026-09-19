@@ -176,7 +176,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>VIVEK MULTI-BOT EQUIPMENT</h1>
-        <div class="subtitle">𝘝𝘐𝘝𝘌𝘒 𝘋𝘖𝘔𝘈𝘐𝘕 𝘌𝘟𝘗𝘈𝘕𝘋𝘌𝘋</div>
+        <div class="subtitle">𝘝𝘐𝘝𝘌𝘒 𝘋𝘖𝘔𝘈𝘐𝘕 𝘌𝘹𝘗𝘈𝘕𝘋𝘌𝘋</div>
 
         <a href="{{ render_url }}" target="_blank" class="btn-render">🌐 OPEN VIVEK RENDER SERVER</a>
 
@@ -302,6 +302,9 @@ def normalize_cmd(text: str) -> str:
     return " ".join(parts)
 
 _all_states = {}
+_bot_instances_list = [] # List storing tuples of (bot_obj, state_obj, label)
+_nc_rotation_index = {}
+_spam_rotation_index = {}
 
 def save_all_states():
     data = {}
@@ -358,21 +361,66 @@ class BotState:
     def is_admin(self, user_id):
         return user_id in OWNER_IDS or user_id in self.subadmins
 
-def spam_worker(bot, state, chat_id, text):
-    while state.spam_flags.get(chat_id, False):
-        try:
-            bot.send_message(chat_id, text)
-        except Exception:
-            pass
-        time.sleep(state.spam_delay.get(chat_id, 0.1))
+# ==========================================
+# 🔄 MULTI-BOT ROTATED WORKERS (SPAM & NC)
+# ==========================================
+def multi_bot_spam_worker(chat_id, text):
+    if chat_id not in _spam_rotation_index:
+        _spam_rotation_index[chat_id] = 0
 
-def nc_worker(bot, state, chat_id, base_name):
-    while state.nc_flags.get(chat_id, False):
-        try:
-            bot.set_chat_title(chat_id, f"{base_name} {cool_emoji()}")
-        except Exception:
-            pass
-        time.sleep(state.nc_delay.get(chat_id, 0.5))
+    while True:
+        active_bots = [(b, st) for b, st, l in _bot_instances_list if st.spam_flags.get(chat_id, False)]
+        if not active_bots:
+            break
+
+        idx = _spam_rotation_index[chat_id] % len(active_bots)
+        current_bot, current_state = active_bots[idx]
+        
+        delay = current_state.spam_delay.get(chat_id, 0.1)
+        
+        # Current bot 3 baar message bheja fir next bot par shift ho gaya
+        for _ in range(3):
+            if not current_state.spam_flags.get(chat_id, False):
+                break
+            try:
+                current_bot.send_message(chat_id, text)
+                time.sleep(delay)
+            except Exception:
+                break
+                
+        _spam_rotation_index[chat_id] += 1
+        time.sleep(0.05)
+
+def multi_bot_nc_worker(chat_id, base_name):
+    if chat_id not in _nc_rotation_index:
+        _nc_rotation_index[chat_id] = 0
+
+    while True:
+        active_bots = [(b, st) for b, st, l in _bot_instances_list if st.nc_flags.get(chat_id, False)]
+        if not active_bots:
+            break
+
+        idx = _nc_rotation_index[chat_id] % len(active_bots)
+        current_bot, current_state = active_bots[idx]
+        
+        delay = current_state.nc_delay.get(chat_id, 0.5)
+
+        # Current bot 3 baar name change kiya fir next bot par switch ho gaya
+        for _ in range(3):
+            if not current_state.nc_flags.get(chat_id, False):
+                break
+            try:
+                current_bot.set_chat_title(chat_id, f"{base_name} {cool_emoji()}")
+                time.sleep(delay)
+            except telebot.apihelper.ApiTelegramException as e:
+                if "Too Many Requests" in str(e):
+                    time.sleep(2)
+                break
+            except Exception:
+                break
+            
+        _nc_rotation_index[chat_id] += 1
+        time.sleep(0.2)
 
 def hunt_worker(bot, state, chat_id, target_id):
     line_idx = 0
@@ -529,11 +577,13 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         cid = message.chat.id
         state.spam_flags[cid] = True
         state.spam_msgs[cid] = text
-        t = Thread(target=spam_worker, args=(bot, state, cid, text), daemon=True)
+        
+        # Start multi-bot rotated spam loop
+        t = Thread(target=multi_bot_spam_worker, args=(cid, text), daemon=True)
         state.spam_threads[cid] = t
         t.start()
         save_all_states()
-        send_and_react(message.chat.id, "🚀 SPAM STARTED SUCCESSFULLY! 🔥")
+        send_and_react(message.chat.id, "🚀 MULTI-BOT ROTATED SPAM STARTED! 🔥")
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "spamoff" and admin_only(m))
     def cmd_spamoff(message):
@@ -551,11 +601,13 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         cid = message.chat.id
         state.nc_flags[cid] = True
         state.nc_names[cid] = name
-        t = Thread(target=nc_worker, args=(bot, state, cid, name), daemon=True)
+        
+        # Start multi-bot rotated name changer loop
+        t = Thread(target=multi_bot_nc_worker, args=(cid, name), daemon=True)
         state.nc_threads[cid] = t
         t.start()
         save_all_states()
-        send_and_react(message.chat.id, "⚡ NAME CHANGER LOOP STARTED!")
+        send_and_react(message.chat.id, "⚡ MULTI-BOT ROTATED NAME CHANGER STARTED! 🔥")
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "ncoff" and admin_only(m))
     def cmd_ncoff(message):
@@ -801,10 +853,12 @@ def main():
     
     for idx, token in enumerate(BOT_TOKENS, 1):
         label = f"Bot-{idx}"
-        # ThreadPoolExecutor to handle message events simultaneously (Speed optimization)
-        bot = telebot.TeleBot(token, parse_mode=None, threaded=True, num_threads=20)
+        bot = telebot.TeleBot(token, parse_mode=None, threaded=True, num_threads=50)
         state = BotState()
         _all_states[label] = state
+        
+        # Store bot instance reference for multi-bot rotation
+        _bot_instances_list.append((bot, state, label))
         
         register_handlers(bot, state, label)
         
@@ -812,8 +866,7 @@ def main():
             logger.info(f"Starting polling for {l}...")
             while True:
                 try:
-                    # Low latency parameters for fast response
-                    b.infinity_polling(timeout=10, long_polling_timeout=2)
+                    b.infinity_polling(timeout=10, long_polling_timeout=3, skip_pending=True)
                 except Exception as e:
                     logger.error(f"Error on {l}: {e}")
                     time.sleep(1)
