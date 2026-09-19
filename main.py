@@ -651,7 +651,6 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             
         save_all_states()
         send_and_react(message.chat.id, f"⚔️ HUNTING STARTED ON USER: `{target_id}`", parse_mode="Markdown")
-)
 
 @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) in ["huntoff", "vhuntoff"] and admin_only(m))
 def cmd_huntoff(message):
