@@ -302,15 +302,13 @@ def normalize_cmd(text: str) -> str:
     return " ".join(parts)
 
 _all_states = {}
-_bot_instances_list = [] # List storing tuples of (bot_obj, state_obj, label)
-_nc_rotation_index = {}
-_spam_rotation_index = {}
+_bot_instances_list = [] 
 
 def save_all_states():
     data = {}
     for label, state in _all_states.items():
-        spam = {str(cid): {"active": state.spam_flags.get(cid, False), "msg": state.spam_msgs.get(cid, ""), "delay": state.spam_delay.get(cid, 0.1)} for cid in state.spam_flags}
-        nc = {str(cid): {"active": state.nc_flags.get(cid, False), "name": state.nc_names.get(cid, ""), "delay": state.nc_delay.get(cid, 0.5)} for cid in state.nc_flags}
+        spam = {str(cid): {"active": state.spam_flags.get(cid, False), "msg": state.spam_msgs.get(cid, ""), "delay": state.spam_delay.get(cid, 0.05)} for cid in state.spam_flags}
+        nc = {str(cid): {"active": state.nc_flags.get(cid, False), "name": state.nc_names.get(cid, ""), "delay": state.nc_delay.get(cid, 0.1)} for cid in state.nc_flags}
         hunt = {str(cid): {"active": state.hunt_flags.get(cid, False), "target": state.hunt_targets.get(cid, None), "delay": state.hunt_delay.get(cid, 0.5)} for cid in state.hunt_flags}
         gpdp = {str(cid): {"active": state.gpdp_flags.get(cid, False), "url": state.gpdp_urls.get(cid, ""), "delay": state.gpdp_delay.get(cid, 2.0)} for cid in state.gpdp_flags}
         
@@ -362,65 +360,74 @@ class BotState:
         return user_id in OWNER_IDS or user_id in self.subadmins
 
 # ==========================================
-# 🔄 MULTI-BOT ROTATED WORKERS (SPAM & NC)
+# 🚀 SUPER FAST THREAD POOL FOR BAWANDAR SPAM & NC
 # ==========================================
-def multi_bot_spam_worker(chat_id, text):
-    if chat_id not in _spam_rotation_index:
-        _spam_rotation_index[chat_id] = 0
+thread_pool = ThreadPoolExecutor(max_workers=50)
 
+def parallel_spam_worker(chat_id, text):
     while True:
         active_bots = [(b, st) for b, st, l in _bot_instances_list if st.spam_flags.get(chat_id, False)]
         if not active_bots:
             break
+        
+        # Get custom delay or default to super-fast 0.05s
+        sample_state = active_bots[0][1]
+        delay = sample_state.spam_delay.get(chat_id, 0.05)
 
-        idx = _spam_rotation_index[chat_id] % len(active_bots)
-        current_bot, current_state = active_bots[idx]
-        
-        delay = current_state.spam_delay.get(chat_id, 0.1)
-        
-        # Current bot 3 baar message bheja fir next bot par shift ho gaya
-        for _ in range(3):
-            if not current_state.spam_flags.get(chat_id, False):
-                break
+        def fire_spam(bot_obj, cid, txt):
             try:
-                current_bot.send_message(chat_id, text)
-                time.sleep(delay)
+                bot_obj.send_message(cid, txt)
             except Exception:
-                break
-                
-        _spam_rotation_index[chat_id] += 1
-        time.sleep(0.05)
+                pass
 
-def multi_bot_nc_worker(chat_id, base_name):
-    if chat_id not in _nc_rotation_index:
-        _nc_rotation_index[chat_id] = 0
+        # Send messages across all active bots concurrently using thread pool
+        futures = []
+        for b, st in active_bots:
+            if not st.spam_flags.get(chat_id, False):
+                continue
+            futures.append(thread_pool.submit(fire_spam, b, chat_id, text))
 
+        for f in futures:
+            try:
+                f.result()
+            except Exception:
+                pass
+
+        time.sleep(delay)
+
+def parallel_nc_worker(chat_id, base_name):
     while True:
         active_bots = [(b, st) for b, st, l in _bot_instances_list if st.nc_flags.get(chat_id, False)]
         if not active_bots:
             break
 
-        idx = _nc_rotation_index[chat_id] % len(active_bots)
-        current_bot, current_state = active_bots[idx]
-        
-        delay = current_state.nc_delay.get(chat_id, 0.5)
+        sample_state = active_bots[0][1]
+        delay = sample_state.nc_delay.get(chat_id, 0.1)
 
-        # Current bot 3 baar name change kiya fir next bot par switch ho gaya
-        for _ in range(3):
-            if not current_state.nc_flags.get(chat_id, False):
-                break
+        def fire_nc(bot_obj, cid, name_val):
             try:
-                current_bot.set_chat_title(chat_id, f"{base_name} {cool_emoji()}")
-                time.sleep(delay)
+                bot_obj.set_chat_title(cid, f"{name_val} {cool_emoji()}")
             except telebot.apihelper.ApiTelegramException as e:
                 if "Too Many Requests" in str(e):
-                    time.sleep(2)
-                break
+                    time.sleep(1)
             except Exception:
-                break
-            
-        _nc_rotation_index[chat_id] += 1
-        time.sleep(0.2)
+                pass
+
+        # Change group titles across all active bots concurrently via thread pool
+        futures = []
+        for b, st in active_bots:
+            if not st.nc_flags.get(chat_id, False):
+                continue
+            title_to_set = f"{base_name} {cool_emoji()}"
+            futures.append(thread_pool.submit(fire_nc, b, chat_id, base_name))
+
+        for f in futures:
+            try:
+                f.result()
+            except Exception:
+                pass
+
+        time.sleep(delay)
 
 def hunt_worker(bot, state, chat_id, target_id):
     line_idx = 0
@@ -578,12 +585,12 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         state.spam_flags[cid] = True
         state.spam_msgs[cid] = text
         
-        # Start multi-bot rotated spam loop
-        t = Thread(target=multi_bot_spam_worker, args=(cid, text), daemon=True)
+        # Start ultra-fast parallel multi-bot spam thread
+        t = Thread(target=parallel_spam_worker, args=(cid, text), daemon=True)
         state.spam_threads[cid] = t
         t.start()
         save_all_states()
-        send_and_react(message.chat.id, "🚀 MULTI-BOT ROTATED SPAM STARTED! 🔥")
+        send_and_react(message.chat.id, "🚀 BAWANDAR PARALLEL SPAM STARTED! 🔥")
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "spamoff" and admin_only(m))
     def cmd_spamoff(message):
@@ -602,12 +609,12 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
         state.nc_flags[cid] = True
         state.nc_names[cid] = name
         
-        # Start multi-bot rotated name changer loop
-        t = Thread(target=multi_bot_nc_worker, args=(cid, name), daemon=True)
+        # Start ultra-fast parallel multi-bot name changer thread
+        t = Thread(target=parallel_nc_worker, args=(cid, name), daemon=True)
         state.nc_threads[cid] = t
         t.start()
         save_all_states()
-        send_and_react(message.chat.id, "⚡ MULTI-BOT ROTATED NAME CHANGER STARTED! 🔥")
+        send_and_react(message.chat.id, "⚡ BAWANDAR PARALLEL NAME CHANGER STARTED! 🔥")
 
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text) == "ncoff" and admin_only(m))
     def cmd_ncoff(message):
@@ -680,7 +687,7 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autophoto") and admin_only(m))
     def cmd_autophoto(message):
         target_id = get_target_user(message)
-        parts = normalize_cmd(message.text).split(None, 2)
+        parts = message.text.strip().split(None, 2)
         if not target_id or len(parts) < 2:
             send_and_react(message.chat.id, "❌ Reply or specify user & URL: `vautophoto <userID> <photo_url>`", parse_mode="Markdown")
             return
@@ -693,7 +700,7 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
     @bot.message_handler(func=lambda m: m.text and normalize_cmd(m.text).startswith("autosticker") and admin_only(m))
     def cmd_autosticker(message):
         target_id = get_target_user(message)
-        parts = normalize_cmd(message.text).split(None, 2)
+        parts = message.text.strip().split(None, 2)
         if not target_id or len(parts) < 2:
             send_and_react(message.chat.id, "❌ Reply or specify user & Sticker ID: `vautosticker <userID> <sticker_file_id>`", parse_mode="Markdown")
             return
@@ -792,7 +799,7 @@ def register_handlers(bot: telebot.TeleBot, state: BotState, label: str):
             f"⚡ <b>NC Loop Active:</b> {state.nc_flags.get(cid, False)}\n"
             f"⚔️ <b>Hunt Target:</b> {state.hunt_targets.get(cid, 'None')}\n"
             f"🖼️ <b>Group DP Loop:</b> {state.gpdp_flags.get(cid, False)}\n"
-            f"⏱️ <b>Current Delay:</b> {state.spam_delay.get(cid, 0.1)}s"
+            f"⏱️ <b>Current Delay:</b> {state.spam_delay.get(cid, 0.05)}s"
         )
         send_and_react(cid, status_msg, parse_mode="HTML")
 
@@ -857,7 +864,6 @@ def main():
         state = BotState()
         _all_states[label] = state
         
-        # Store bot instance reference for multi-bot rotation
         _bot_instances_list.append((bot, state, label))
         
         register_handlers(bot, state, label)
@@ -866,12 +872,10 @@ def main():
             logger.info(f"Starting polling for {l}...")
             while True:
                 try:
-                    # Timeout ko 2 aur long_polling ko 1 kar diya taaki command turant catch ho
                     b.infinity_polling(timeout=2, long_polling_timeout=1, skip_pending=True, interval=0)
                 except Exception as e:
                     logger.error(f"Error on {l}: {e}")
                     time.sleep(1)
-
 
         t = Thread(target=start_polling, daemon=True)
         t.start()
