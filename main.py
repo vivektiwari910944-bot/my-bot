@@ -3,8 +3,9 @@ import sys
 import random
 import logging
 import asyncio
-from threading import Thread
+import io
 import requests
+from threading import Thread
 from flask import Flask, render_template_string
 from dotenv import load_dotenv
 
@@ -30,7 +31,7 @@ bg_image_url = DEFAULT_BG
 render_web_url = "https://my-bot-zlmx.onrender.com/"
 
 # ==========================================
-# 🌐 FLASK ANIME GLOW WEB MENU SERVER
+# 🌐 FLASK ANIME GLOW FULL COMMAND DASHBOARD
 # ==========================================
 web_app = Flask(__name__)
 
@@ -40,11 +41,11 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VIVEK MULTI-BOT 🦁</title>
+    <title>VIVEK MULTI-BOT DOMAIN 🦁</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: linear-gradient(rgba(10, 15, 30, 0.55), rgba(10, 15, 30, 0.65)), 
+            background: linear-gradient(rgba(8, 12, 24, 0.7), rgba(8, 12, 24, 0.8)), 
                         url('{{ bg_url }}') no-repeat center center fixed;
             background-size: cover;
             color: #ffffff;
@@ -53,50 +54,77 @@ HTML_TEMPLATE = """
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            padding: 20px;
+            padding: 25px 15px;
         }
         .container {
             width: 100%;
-            max-width: 880px;
-            background: rgba(18, 22, 40, 0.75);
+            max-width: 950px;
+            background: rgba(15, 20, 35, 0.85);
             border: 2px solid #00f0ff;
-            box-shadow: 0 0 35px rgba(0, 240, 255, 0.5), inset 0 0 20px rgba(0, 240, 255, 0.2);
+            box-shadow: 0 0 40px rgba(0, 240, 255, 0.4), inset 0 0 20px rgba(0, 240, 255, 0.15);
             border-radius: 20px;
-            padding: 30px;
-            backdrop-filter: blur(14px);
+            padding: 35px 25px;
+            backdrop-filter: blur(16px);
             text-align: center;
         }
-        h1 { font-size: 2.6rem; color: #ff0055; text-shadow: 0 0 15px #ff0055; margin-bottom: 8px; font-weight: 800; }
-        .subtitle { font-size: 1.2rem; color: #00ffff; margin-bottom: 20px; text-shadow: 0 0 10px #00ffff; font-weight: 600; }
+        h1 { font-size: 2.8rem; color: #ff0055; text-shadow: 0 0 18px #ff0055; margin-bottom: 6px; font-weight: 800; letter-spacing: 1px; }
+        .subtitle { font-size: 1.25rem; color: #00ffff; margin-bottom: 22px; text-shadow: 0 0 10px #00ffff; font-weight: 600; }
         .btn-render {
-            display: inline-block; margin: 10px 0 25px 0; padding: 14px 32px; font-size: 1.15rem; font-weight: bold;
+            display: inline-block; margin: 5px 0 25px 0; padding: 14px 36px; font-size: 1.15rem; font-weight: bold;
             color: #ffffff; background: linear-gradient(45deg, #ff0055, #7928ca, #00dfd8);
             background-size: 200% 200%; animation: gradientGlow 3s ease infinite; border: none; border-radius: 30px;
-            text-decoration: none; box-shadow: 0 0 20px rgba(0, 223, 216, 0.8); transition: all 0.3s ease;
+            text-decoration: none; box-shadow: 0 0 22px rgba(0, 223, 216, 0.8); transition: all 0.3s ease;
         }
         @keyframes gradientGlow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        .section-title { font-size: 1.35rem; color: #ffd700; border-bottom: 2px solid #ffd700; display: inline-block; margin: 22px 0 15px 0; padding-bottom: 4px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px; }
-        .card { background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(0, 240, 255, 0.45); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); }
-        .cmd { font-weight: bold; color: #00ffff; font-size: 1.05rem; }
-        .desc { font-size: 0.9rem; color: #f1f1f1; margin-top: 5px; }
-        .footer { margin-top: 25px; font-size: 1.1rem; color: #ff0055; font-weight: bold; }
+        .section-title { font-size: 1.4rem; color: #ffd700; border-bottom: 2px solid #ffd700; display: inline-block; margin: 25px 0 18px 0; padding-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; text-align: left; }
+        .card { 
+            background: rgba(255, 255, 255, 0.08); 
+            border: 1px solid rgba(0, 240, 255, 0.35); 
+            padding: 16px 18px; 
+            border-radius: 14px; 
+            backdrop-filter: blur(8px);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .card:hover { transform: translateY(-3px); border-color: #ff0055; box-shadow: 0 0 15px rgba(255, 0, 85, 0.3); }
+        .cmd { font-weight: bold; color: #00ffff; font-size: 1.1rem; text-shadow: 0 0 5px rgba(0, 255, 255, 0.5); }
+        .desc { font-size: 0.92rem; color: #e0e0e0; margin-top: 6px; line-height: 1.3; }
+        .footer { margin-top: 35px; font-size: 1.15rem; color: #ff0055; font-weight: bold; text-shadow: 0 0 10px rgba(255, 0, 85, 0.5); }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>VIVEK MULTI-BOT EQUIPMENT</h1>
-        <div class="subtitle">𝘝𝘐𝘝𝘌𝘒 𝘋𝘖𝘔𝘈𝘐𝘕 𝘌𝘹𝘗𝘈𝘕𝘋𝘌𝘋</div>
+        <h1>VIVEK MULTI-BOT COMMAND CENTER</h1>
+        <div class="subtitle">𝘝𝘐𝘝𝘌𝘒 𝘋𝘖𝘔𝘈𝘐𝘕 𝘌𝘹𝘗𝘈𝘕𝘋𝘌𝘋 👑</div>
         <a href="{{ render_url }}" target="_blank" class="btn-render">🌐 OPEN VIVEK RENDER SERVER</a>
-        <div class="section-title">🚀 COMMANDS PANEL</div>
+
+        <div class="section-title">⚡ ATTACK & LOOPS PANEL</div>
         <div class="grid">
-            <div class="card"><div class="cmd">/menu</div><div class="desc">Show Menu</div></div>
-            <div class="card"><div class="cmd">/hunt &lt;target&gt;</div><div class="desc">Hunt down target</div></div>
-            <div class="card"><div class="cmd">/stop</div><div class="desc">Chat-Specific Kill Switch</div></div>
-            <div class="card"><div class="cmd">/spam &lt;msg&gt;</div><div class="desc">Start fast spam</div></div>
-            <div class="card"><div class="cmd">/nc &lt;name&gt;</div><div class="desc">Name changer loop</div></div>
-            <div class="card"><div class="cmd">/gpdp &lt;url&gt;</div><div class="desc">Group DP changer</div></div>
+            <div class="card"><div class="cmd">/spam &lt;text&gt;</div><div class="desc">Continuous high-speed multi-bot text spammer</div></div>
+            <div class="card"><div class="cmd">/nc &lt;name&gt;</div><div class="desc">Parallel multi-bot group title/name changer loop</div></div>
+            <div class="card"><div class="cmd">/hunt &lt;id / reply&gt;</div><div class="desc">Continuous targeted user hunting attack</div></div>
+            <div class="card"><div class="cmd">/gpdp &lt;image_url&gt;</div><div class="desc">Continuous group profile picture changer loop</div></div>
         </div>
+
+        <div class="section-title">🎯 AUTO TARGET TRIGGERS</div>
+        <div class="grid">
+            <div class="card"><div class="cmd">/autoreply &lt;id&gt; &lt;msg&gt;</div><div class="desc">Instant text auto-reply whenever target messages</div></div>
+            <div class="card"><div class="cmd">/autophoto &lt;id&gt; &lt;url&gt;</div><div class="desc">Instant photo auto-reply on target message</div></div>
+            <div class="card"><div class="cmd">/autosticker &lt;id&gt; &lt;stk_id&gt;</div><div class="desc">Instant sticker auto-reply on target message</div></div>
+            <div class="card"><div class="cmd">/react &lt;id&gt; &lt;emoji&gt;</div><div class="desc">Instant emoji reaction on target message</div></div>
+            <div class="card"><div class="cmd">/stopreply</div><div class="desc">Clears all auto-replies, photos, stickers & reactions</div></div>
+        </div>
+
+        <div class="section-title">⚙️ ENGINE CONTROLS & UTILITIES</div>
+        <div class="grid">
+            <div class="card"><div class="cmd">/flow &lt;seconds&gt;</div><div class="desc">Adjust global sending & execution speed delay</div></div>
+            <div class="card"><div class="cmd">/stop (or /off)</div><div class="desc">Universal kill switch to halt all running loops in chat</div></div>
+            <div class="card"><div class="cmd">/status</div><div class="desc">Check real-time status of active tasks in chat</div></div>
+            <div class="card"><div class="cmd">/menu</div><div class="desc">Display main interactive inline bot menu</div></div>
+            <div class="card"><div class="cmd">/info</div><div class="desc">Fetch target or user Telegram ID & details</div></div>
+            <div class="card"><div class="cmd">/del</div><div class="desc">Bulk delete recent bot messages in the chat</div></div>
+        </div>
+
         <div class="footer">🟢 DEVELOPER : VIVEK TIWARI 🟢</div>
     </div>
 </body>
@@ -173,8 +201,10 @@ delays = {} # chat_id -> float
 apps = []
 
 # ==========================================
-# 🚀 ASYNC WORKERS (MAXIMUM SPEED LOOPS)
+# 🚀 ASYNC WORKERS (ULTRA SPEED LOOPS)
 # ==========================================
+
+# 1. SPAM WORKER
 async def spam_worker(chat_id, text):
     while True:
         delay = delays.get(chat_id, 0.01)
@@ -182,23 +212,19 @@ async def spam_worker(chat_id, text):
         await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(delay)
 
+# 2. ULTRA-FAST PARALLEL NAME CHANGER
 async def nc_worker(chat_id, base_name):
-    """Multi-Bot Token Rotation to bypass rate limits & maximize speed"""
-    bot_index = 0
+    bot_idx = 0
     while True:
-        delay = delays.get(chat_id, 0.01)
-        new_title = f"{base_name} {cool_emoji()}"
-        
+        delay = delays.get(chat_id, 0.001)
         if apps:
-            app = apps[bot_index % len(apps)]
-            bot_index += 1
-            try:
-                await app.bot.set_chat_title(chat_id=chat_id, title=new_title)
-            except Exception:
-                pass
-                
+            new_title = f"{base_name} {cool_emoji()}"
+            app = apps[bot_idx % len(apps)]
+            bot_idx += 1
+            asyncio.create_task(app.bot.set_chat_title(chat_id=chat_id, title=new_title))
         await asyncio.sleep(delay)
 
+# 3. HUNT WORKER
 async def hunt_worker(chat_id, target_id):
     line_idx = 0
     while True:
@@ -211,20 +237,26 @@ async def hunt_worker(chat_id, target_id):
         await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(delay)
 
+# 4. FIXED GROUP DP CHANGER
 async def gpdp_worker(chat_id, photo_url):
+    bot_idx = 0
     while True:
-        delay = delays.get(chat_id, 2.0)
+        delay = delays.get(chat_id, 1.0)
         try:
-            res = requests.get(photo_url, timeout=5)
+            res = requests.get(photo_url, timeout=10)
             if res.status_code == 200:
-                for app in apps:
+                img_bytes = res.content
+                if apps:
+                    app = apps[bot_idx % len(apps)]
+                    bot_idx += 1
                     try:
-                        await app.bot.set_chat_photo(chat_id=chat_id, photo=res.content)
-                        break
+                        photo_file = io.BytesIO(img_bytes)
+                        photo_file.name = "dp.jpg"
+                        await app.bot.set_chat_photo(chat_id=chat_id, photo=photo_file)
                     except Exception:
-                        continue
-        except Exception:
-            pass
+                        pass
+        except Exception as e:
+            logger.error(f"GPDP Fetch Error: {e}")
         await asyncio.sleep(delay)
 
 def is_owner(user_id: int) -> bool:
@@ -251,7 +283,7 @@ async def cmd_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args: return
     try:
         val = float(context.args[0])
-        delays[update.effective_chat.id] = max(val, 0.01)
+        delays[update.effective_chat.id] = max(val, 0.001)
         await update.message.reply_text(f"⚡ Speed Flow set to {val}s!")
     except ValueError:
         pass
@@ -274,7 +306,7 @@ async def cmd_nc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if cid in nc_tasks: nc_tasks[cid].cancel()
     nc_tasks[cid] = asyncio.create_task(nc_worker(cid, name))
-    await update.message.reply_text("⚡ FAST NAME CHANGER STARTED! 🔥")
+    await update.message.reply_text("⚡ ULTRA-FAST PARALLEL NAME CHANGER STARTED! 🔥")
 
 async def cmd_hunt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
@@ -295,7 +327,7 @@ async def cmd_gpdp(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if cid in gpdp_tasks: gpdp_tasks[cid].cancel()
     gpdp_tasks[cid] = asyncio.create_task(gpdp_worker(cid, url))
-    await update.message.reply_text("🖼️ GROUP DP LOOP STARTED!")
+    await update.message.reply_text("🖼️ GROUP DP CHANGER STARTED SUCCESSFULLY! 🔥")
 
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
@@ -426,7 +458,7 @@ async def main():
         app.add_handler(CommandHandler("del", cmd_del))
         app.add_handler(CommandHandler("status", cmd_status))
 
-        # Message Listener (Auto replies/reactions ke liye)
+        # Message Listener
         app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message_features))
         
         await app.initialize()
