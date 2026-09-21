@@ -160,19 +160,14 @@ def run_setup():
         for j, t in enumerate(tokens, 1): f.write(f"BOT_TOKEN_{j}={t}\n")
     load_dotenv(override=True)
 
-if not os.environ.get("OWNER_IDS") or not os.environ.get("BOT_TOKEN_1"):
-    run_setup()
-
 OWNER_IDS_RAW = os.environ.get("OWNER_IDS", "")
 OWNER_IDS = set(int(x.strip()) for x in OWNER_IDS_RAW.split(",") if x.strip().isdigit())
 
 BOT_TOKENS = []
-i = 1
-while True:
-    tok = os.environ.get(f"BOT_TOKEN_{i}")
-    if not tok: break
-    BOT_TOKENS.append(tok.strip())
-    i += 1
+for key, val in sorted(os.environ.items()):
+    if key.startswith("BOT_TOKEN_") and val.strip():
+        BOT_TOKENS.append(val.strip())
+
 
 COOL_EMOJIS = ["🔥","⚡","👑","💀","🚀","💥","⚔️","🔱","🎯","🩸","💣","🐺","🦅","💎","🏆"]
 def cool_emoji(): return random.choice(COOL_EMOJIS)
