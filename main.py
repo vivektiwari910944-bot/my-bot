@@ -183,15 +183,20 @@ async def spam_worker(chat_id, text):
         await asyncio.sleep(delay)
 
 async def nc_worker(chat_id, base_name):
+    """Multi-Bot Token Rotation to bypass rate limits & maximize speed"""
+    bot_index = 0
     while True:
-        delay = delays.get(chat_id, 0.1)
+        delay = delays.get(chat_id, 0.01)
         new_title = f"{base_name} {cool_emoji()}"
-        for app in apps:
+        
+        if apps:
+            app = apps[bot_index % len(apps)]
+            bot_index += 1
             try:
                 await app.bot.set_chat_title(chat_id=chat_id, title=new_title)
-                break
             except Exception:
-                continue
+                pass
+                
         await asyncio.sleep(delay)
 
 async def hunt_worker(chat_id, target_id):
